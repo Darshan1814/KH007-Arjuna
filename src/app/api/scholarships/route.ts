@@ -20,6 +20,7 @@ interface ScholarshipInput {
   degree?: string
   cgpa?: string | number
   familyIncomeINR?: number
+  count?: number
 }
 
 interface SerperOrganic {
@@ -103,6 +104,7 @@ export async function POST(request: Request) {
     const field = body.field || "master's"
     const uni = body.university || ''
     const year = new Date().getFullYear()
+    const wantCount = Math.min(20, Math.max(3, body.count ?? 6))
 
     if (!process.env.SERPER_API_KEY) {
       return NextResponse.json({ options: FALLBACK, source: 'fallback' })
@@ -112,13 +114,16 @@ export async function POST(request: Request) {
       `${uni} ${field} scholarship for Indian students apply ${year}`,
       `${country} scholarship for Indian students ${field} master's apply ${year}`,
       `government scholarship study ${country} Indian students ${year}`,
+      `merit scholarship ${field} ${country} ${year} Indian students`,
+      `fully funded scholarship ${country} ${field} master's Indian students`,
+      `private foundation scholarship ${country} Indian students ${year}`,
     ].filter((q) => q.trim().length > 0)
 
     const all: SerperOrganic[] = []
     for (const q of queries) {
-      const r = await serperSearch(q, 8)
+      const r = await serperSearch(q, 10)
       all.push(...r)
-      if (all.length >= 24) break
+      if (all.length >= 60) break
     }
 
     if (all.length === 0) {
@@ -137,7 +142,7 @@ export async function POST(request: Request) {
 
     if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'mock') {
       // Without Gemini extraction we still return Serper-derived rows.
-      const options = cleaned.slice(0, 6).map<ScholarshipResult>((r) => ({
+      const options = cleaned.slice(0, wantCount).map<ScholarshipResult>((r) => ({
         name: r.title,
         provider: new URL(r.link).host.replace('www.', ''),
         amount: '—',
@@ -149,7 +154,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ options, source: 'serper' })
     }
 
-    const prompt = `You are an admission counsellor. From the live Google search results below pick the **6 best SCHOLARSHIPS** for an Indian student${uni ? ` targeting ${uni}` : ''} for a ${field} program in ${country}.
+    const prompt = `You are an admission counsellor. From the live Google search results below pick the **${wantCount} best SCHOLARSHIPS** for an Indian student${uni ? ` targeting ${uni}` : ''} for a ${field} program in ${country}.
 
 ABSOLUTE RULES (any violation = drop the row)
 - Must be a SCHOLARSHIP / fellowship / grant for Indian or international students. Never pick education loans, news articles, or generic blog posts.
@@ -167,7 +172,7 @@ STUDENT PROFILE
 
 LIVE SEARCH RESULTS (titles, URLs, snippets):
 ${cleaned
-  .slice(0, 24)
+  .slice(0, 40)
   .map(
     (r, i) => `${i + 1}. ${r.title}
 URL: ${r.link}
@@ -175,7 +180,7 @@ Snippet: ${r.snippet}`,
   )
   .join('\n\n')}
 
-Return strict JSON: { "options": Scholarship[] } (max 6).`
+Return strict JSON: { "options": Scholarship[] } (max ${wantCount}).`
 
     try {
       const resp = await ai.models.generateContent({
@@ -210,14 +215,14 @@ Return strict JSON: { "options": Scholarship[] } (max 6).`
       })
 
       const parsed = JSON.parse(resp.text || '{}')
-      const options = (Array.isArray(parsed.options) ? parsed.options : []).slice(0, 6) as ScholarshipResult[]
+      const options = (Array.isArray(parsed.options) ? parsed.options : []).slice(0, wantCount) as ScholarshipResult[]
       if (options.length === 0) {
         return NextResponse.json({ options: FALLBACK, source: 'gemini-empty' })
       }
       return NextResponse.json({ options, source: 'serper+gemini' })
     } catch {
       // Gemini failed; degrade to plain Serper.
-      const options = cleaned.slice(0, 6).map<ScholarshipResult>((r) => ({
+      const options = cleaned.slice(0, wantCount).map<ScholarshipResult>((r) => ({
         name: r.title,
         provider: new URL(r.link).host.replace('www.', ''),
         amount: '—',

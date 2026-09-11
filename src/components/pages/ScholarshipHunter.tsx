@@ -1,212 +1,602 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+// Scholarship Hunter — live, profile-aware scholarship discovery.
+// ----------------------------------------------------------------------------
+// Pulls 12 cards from /api/scholarships (Serper + Gemini extraction).
+// Defaults are seeded from the user's profile (target country, target field,
+// degree, CGPA). The student can change destination country / field / degree
+// inline; results re-fetch automatically. India is supported as a "domestic"
+// destination — the route handles that case gracefully.
+
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
-import { formatINR } from '@/lib/utils'
-import { 
-  Award, Search, Calendar, Sparkles, 
-  ExternalLink, Loader2, Filter, Globe,
-  Briefcase, GraduationCap
+import { parseNumber } from '@/lib/utils'
+import { countries as RAW_COUNTRIES } from 'countries-list'
+import {
+  Award,
+  Sparkles,
+  ExternalLink,
+  Loader2,
+  Calendar,
+  Globe,
+  Search,
+  RefreshCw,
+  Filter,
+  ChevronDown,
+  X,
+  Building2,
 } from 'lucide-react'
 
-interface Scholarship {
-  id: string
+interface ScholarshipResult {
   name: string
   provider: string
-  amount: number
+  amount: string
   deadline: string
-  link: string
-  eligibility: string
-  country: string
-  matchScore: number
+  fitReason: string
+  applyUrl: string
+  sourceUrl: string
 }
 
-export default function ScholarshipHunter({ embedded = false }: { embedded?: boolean } = {}) {
-  const { profile, addXP } = useAppStore()
-  const [query, setQuery] = useState('')
+interface CountryOption {
+  code: string
+  name: string
+}
+const COUNTRY_OPTIONS: CountryOption[] = Object.entries(RAW_COUNTRIES)
+  .map(([code, info]) => ({ code, name: (info as any).name as string }))
+  .sort((a, b) => a.name.localeCompare(b.name))
+
+const findCountryByName = (name?: string): CountryOption | undefined => {
+  if (!name) return undefined
+  const n = name.trim().toLowerCase()
+  return COUNTRY_OPTIONS.find(
+    (c) => c.name.toLowerCase() === n || c.code.toLowerCase() === n,
+  )
+}
+
+const FIELD_OPTIONS = [
+  'Computer Science',
+  'Data Science',
+  'Engineering',
+  'Business',
+  'Finance',
+  'Economics',
+  'Medicine',
+  'Public Health',
+  'Law',
+  'Arts',
+  'Design',
+  'Architecture',
+]
+const DEGREE_OPTIONS = ['MS', 'MBA', 'MIM', 'MA', 'MPH', 'M.Arch', 'LLM', 'MFA', 'PhD']
+
+export default function ScholarshipHunter({
+  embedded = false,
+}: { embedded?: boolean } = {}) {
+  const { profile, setCurrentPage } = useAppStore()
+
+  // Profile-derived defaults
+  const profileCountryName =
+    (profile as any)?.targetCountries?.[0] || profile?.targetCountry?.[0] || 'USA'
+  const profileFieldName =
+    (profile as any)?.targetField || profile?.targetProgram || 'Computer Science'
+  const profileDegreeName = (profile as any)?.targetDegree || 'MS'
+
+  const [country, setCountry] = useState<CountryOption>(
+    findCountryByName(profileCountryName) || findCountryByName('USA') || COUNTRY_OPTIONS[0],
+  )
+  const [field, setField] = useState<string>(profileFieldName)
+  const [degree, setDegree] = useState<string>(profileDegreeName)
+  const [search, setSearch] = useState('')
+
+  const [results, setResults] = useState<ScholarshipResult[]>([])
   const [loading, setLoading] = useState(false)
-  const [results, setResults] = useState<Scholarship[]>([])
-  const [hasSearched, setHasSearched] = useState(false)
+  const [source, setSource] = useState('')
 
-  const searchScholarships = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    if (!query) return
+  const cgpa = profile.undergradCgpa || profile.cgpa
+  const familyIncomeINR =
+    (profile as any)?.familyAnnualIncomeINR ||
+    parseNumber(profile.familyIncomeStr || '', 0)
 
+  const fetchScholarships = async () => {
     setLoading(true)
-    setHasSearched(true)
     try {
-      const res = await fetch('/api/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          query: `scholarships for Indian students ${query} ${profile.targetProgram} in ${profile.targetCountry.join(' ')}` 
-        })
-      })
-      const data = await res.json()
-      
-      // Use Groq to parse and rank results
-      const groqRes = await fetch('/api/chat', {
+      const r = await fetch('/api/scholarships', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: `Based on these search results: ${JSON.stringify(data.results)}, identify 5-8 real scholarships for a student wanting to study ${profile.targetProgram}. 
-          Return ONLY a JSON array of objects with: id, name, provider, amount (in INR), deadline, link, eligibility, country, matchScore (0-100 based on profile).`,
-          profile,
-          conversationHistory: []
-        })
+          country: country.name,
+          field,
+          degree,
+          cgpa,
+          familyIncomeINR,
+          count: 12,
+        }),
       })
-
-      const reader = groqRes.body?.getReader()
-      const decoder = new TextDecoder()
-      let content = ''
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          content += decoder.decode(value, { stream: true })
-        }
-      }
-
-      // Extract JSON from response
-      const jsonStr = content.match(/\[[\s\S]*\]/)?.[0]
-      if (jsonStr) {
-        const parsed = JSON.parse(jsonStr)
-        setResults(parsed)
-        addXP(50)
-      }
+      const j = await r.json()
+      const list: ScholarshipResult[] = Array.isArray(j?.options) ? j.options : []
+      setResults(list)
+      setSource(j?.source || '')
     } catch (e) {
       console.error(e)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
-  // Pre-fill query based on profile if empty
+  // Auto-fetch on mount and when filters change.
   useEffect(() => {
-    if (!query && profile.targetProgram) {
-      setQuery(`${profile.targetProgram} ${profile.targetCountry[0] || ''}`)
-    }
-  }, [profile, query])
+    fetchScholarships()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [country.code, field, degree])
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return results
+    return results.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.provider.toLowerCase().includes(q) ||
+        r.fitReason.toLowerCase().includes(q),
+    )
+  }, [results, search])
+
+  const isDomestic = country.name.toLowerCase() === 'india'
 
   return (
-    <div className="max-w-6xl space-y-8">
+    <div className="max-w-7xl space-y-6">
       {!embedded && (
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h2 className="text-3xl font-bold text-[var(--foreground)] flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
-                <Award className="w-6 h-6 text-amber-500" />
-              </div>
+            <h2
+              className="text-2xl font-bold flex items-center gap-2"
+              style={{ color: 'var(--foreground)' }}
+            >
+              <Award className="w-6 h-6" style={{ color: 'var(--accent)' }} />
               Scholarship Hunter
             </h2>
-            <p className="mt-2" style={{ color: 'var(--foreground-secondary)' }}>Real-time scholarship discovery powered by Serper & Groq Intelligence.</p>
+            <p
+              className="mt-1 text-sm"
+              style={{ color: 'var(--foreground-secondary)' }}
+            >
+              Live scholarship cards pulled from Google for your profile in {country.name}.
+              {isDomestic
+                ? ' Switch to a foreign country above to plan your study-abroad funding.'
+                : ''}
+            </p>
           </div>
-          <div className="flex items-center gap-2 p-2 bg-white/5 rounded-xl border border-white/10">
-            <GraduationCap className="w-4 h-4 text-indigo-400" />
-            <span className="text-xs font-semibold" style={{ color: 'var(--foreground-secondary)' }}>Matching: {profile.targetProgram || 'Any Program'}</span>
+          <button
+            onClick={fetchScholarships}
+            disabled={loading}
+            className="btn-secondary text-xs flex items-center gap-1 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="card" style={{ position: 'relative', zIndex: 60, overflow: 'visible' }}>
+        <div className="flex items-center gap-2 mb-3">
+          <Filter className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+          <h3 className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
+            Match my profile
+          </h3>
+          {source && (
+            <span
+              className="ml-auto text-[10px] uppercase tracking-wider px-2 py-0.5 rounded"
+              style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--primary-light)' }}
+            >
+              {source}
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <CountryPicker
+            label="Destination country"
+            selected={country}
+            onChange={setCountry}
+            options={COUNTRY_OPTIONS}
+          />
+          <PillSelect label="Field of study" value={field} options={FIELD_OPTIONS} onChange={setField} />
+          <PillSelect label="Degree" value={degree} options={DEGREE_OPTIONS} onChange={setDegree} />
+        </div>
+
+        <div className="mt-3 relative">
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
+            style={{ color: 'var(--foreground-muted)' }}
+          />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filter the 12 cards (name, provider, eligibility)…"
+            className="input-field pl-10 pr-9 text-sm"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2"
+            >
+              <X className="w-3.5 h-3.5" style={{ color: 'var(--foreground-muted)' }} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* India notice — pivot to foreign plans */}
+      {isDomestic && (
+        <div
+          className="card flex flex-col md:flex-row gap-3 md:items-center md:justify-between"
+          style={{
+            background: 'rgba(245,158,11,0.06)',
+            borderColor: 'rgba(245,158,11,0.25)',
+          }}
+        >
+          <div className="flex items-start gap-3">
+            <Globe className="w-5 h-5 mt-0.5" style={{ color: 'var(--warning)' }} />
+            <div>
+              <div
+                className="text-sm font-semibold"
+                style={{ color: 'var(--foreground)' }}
+              >
+                Planning to study abroad from India?
+              </div>
+              <p
+                className="text-xs mt-1 leading-relaxed"
+                style={{ color: 'var(--foreground-secondary)' }}
+              >
+                Switch the destination above to USA, Canada, UK, Germany, or any other country to
+                see scholarships open to Indian applicants for foreign master's/PhD programs. You
+                can also map your scores to specific colleges or estimate the financial picture
+                using the calculators.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {['USA', 'Canada', 'UK', 'Germany', 'Australia'].map((cn) => {
+              const c = findCountryByName(cn)
+              if (!c) return null
+              return (
+                <button
+                  key={cn}
+                  onClick={() => setCountry(c)}
+                  className="text-xs font-medium px-3 py-1.5 rounded-full"
+                  style={{
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--foreground)',
+                  }}
+                >
+                  {cn}
+                </button>
+              )
+            })}
+            <button
+              onClick={() => setCurrentPage('college-match')}
+              className="btn-primary text-xs"
+            >
+              College Match →
+            </button>
+            <button
+              onClick={() => setCurrentPage('roi-calculator')}
+              className="btn-secondary text-xs"
+            >
+              ROI Calculator →
+            </button>
           </div>
         </div>
       )}
 
-      {/* Search Bar */}
-      <form onSubmit={searchScholarships} className="relative group">
-        <div className="absolute inset-0 bg-indigo-500/10 blur-2xl rounded-full opacity-0 group-focus-within:opacity-100 transition-opacity" />
-        <div className="relative flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 bg-[#161725] border border-[var(--foreground-muted)] rounded-2xl shadow-2xl">
-          <div className="flex items-center flex-1">
-            <Search className="w-5 h-5 ml-4 text-[var(--foreground-muted)]" />
-            <input 
-              className="flex-1 bg-transparent border-none outline-none py-4 px-2 text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] text-sm sm:text-lg"
-              placeholder="Search (e.g. STEM women)..."
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-            />
-          </div>
-          <button type="submit" disabled={loading}
-            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-[var(--foreground)] px-6 sm:px-8 py-3 sm:py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-500/20">
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-            <span className="whitespace-nowrap">{loading ? 'Hunting...' : 'Find Scholarships'}</span>
-          </button>
+      {/* Results grid (12 cards) */}
+      {loading && results.length === 0 ? (
+        <div className="card flex items-center gap-2 justify-center py-10">
+          <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--primary)' }} />
+          <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>
+            Scanning live scholarship pages for {field} in {country.name}…
+          </span>
         </div>
-      </form>
-
-      {/* Results */}
-      <div className="space-y-4">
-        {!hasSearched ? (
-          <div className="py-20 text-center space-y-6">
-            <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center mx-auto border border-white/10">
-              <Search className="w-10 h-10 text-white/10" />
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-xl font-bold text-white/30">Ready to find your funding?</h3>
-              <p className="text-sm text-white/20 max-w-md mx-auto">Enter a specific query or use our AI recommended search based on your profile.</p>
-            </div>
-            <div className="flex flex-wrap justify-center gap-2">
-              <button onClick={() => { setQuery('Merit scholarships'); searchScholarships(); }} className="px-4 py-2 rounded-lg bg-white/5 border border-white/5 text-xs text-white/50 hover:border-white/20 hover:text-white transition-all">Merit Based</button>
-              <button onClick={() => { setQuery('Full ride'); searchScholarships(); }} className="px-4 py-2 rounded-lg bg-white/5 border border-white/5 text-xs text-white/50 hover:border-white/20 hover:text-white transition-all">Full Ride</button>
-              <button onClick={() => { setQuery('Underrepresented groups'); searchScholarships(); }} className="px-4 py-2 rounded-lg bg-white/5 border border-white/5 text-xs text-white/50 hover:border-white/20 hover:text-white transition-all">Diversity</button>
-            </div>
-          </div>
-        ) : loading ? (
-          <div className="py-20 text-center space-y-4">
-            <div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mx-auto" />
-            <p className="text-indigo-400 font-medium animate-pulse">Scanning worldwide databases for matches...</p>
-          </div>
-        ) : results.length > 0 ? (
-          <AnimatePresence>
-            <div className="grid grid-cols-1 gap-4">
-              {results.map((s, i) => (
-                <motion.div key={s.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}
-                  className="group bg-[#161725] border border-white/5 hover:border-indigo-500/30 rounded-2xl p-6 transition-all hover:shadow-2xl hover:shadow-indigo-500/10 flex flex-col md:flex-row gap-6 items-start md:items-center">
-                  
-                  <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center flex-shrink-0 group-hover:bg-indigo-500/20 transition-all">
-                    <Award className="w-8 h-8 text-indigo-400" />
+      ) : filtered.length === 0 ? (
+        <div className="card text-center py-10">
+          <Search className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--foreground-muted)' }} />
+          <p className="text-sm" style={{ color: 'var(--foreground)' }}>
+            No scholarships matched.
+          </p>
+          <p className="text-xs mt-1" style={{ color: 'var(--foreground-muted)' }}>
+            Try a different country, field, or clear the search filter.
+          </p>
+        </div>
+      ) : (
+        <AnimatePresence>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map((s, i) => (
+              <motion.div
+                key={`${s.applyUrl}-${i}`}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i, 11) * 0.04 }}
+                className="card flex flex-col gap-2"
+                style={{ padding: '1.1rem 1.25rem' }}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: 'rgba(99,102,241,0.12)' }}
+                  >
+                    <Award className="w-5 h-5" style={{ color: 'var(--primary-light)' }} />
                   </div>
-
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center gap-3">
-                      <h4 className="text-lg font-bold text-[var(--foreground)] group-hover:text-indigo-400 transition-all truncate">{s.name}</h4>
-                      <span className="px-2 py-1 rounded bg-white/5 text-[10px] font-bold text-white/40 uppercase tracking-widest">{s.country}</span>
+                  <div className="min-w-0">
+                    <div
+                      className="font-bold text-sm truncate"
+                      style={{ color: 'var(--foreground)' }}
+                      title={s.name}
+                    >
+                      {s.name}
                     </div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--foreground-secondary)' }}>{s.provider}</p>
-                    <div className="flex flex-wrap gap-4 pt-2">
-                      <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--foreground-muted)' }}>
-                        <Briefcase className="w-3.5 h-3.5" /> {s.eligibility.slice(0, 40)}...
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--foreground-muted)' }}>
-                        <Calendar className="w-3.5 h-3.5" /> Deadline: {s.deadline}
-                      </div>
+                    <div
+                      className="text-[11px] mt-0.5 flex items-center gap-1 truncate"
+                      style={{ color: 'var(--foreground-muted)' }}
+                    >
+                      <Building2 className="w-3 h-3 flex-shrink-0" />
+                      <span className="truncate">{s.provider}</span>
                     </div>
                   </div>
+                </div>
 
-                  <div className="flex items-center justify-between w-full md:w-auto pt-4 md:pt-0 border-t md:border-t-0 border-white/5 gap-4">
-                    <div className="text-left md:text-right flex-1 md:flex-none">
-                      <div className="text-lg sm:text-xl font-black text-amber-500">₹{formatINR(s.amount)}</div>
-                      <div className="text-[9px] sm:text-[10px] font-bold text-white/20 uppercase tracking-widest">Est. Reward</div>
-                    </div>
-                    
-                    <div className="text-center">
-                      <div className={`text-xl sm:text-2xl font-black ${s.matchScore >= 80 ? 'text-green-500' : s.matchScore >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
-                        {s.matchScore}%
-                      </div>
-                      <div className="text-[9px] sm:text-[10px] font-bold text-white/20 uppercase tracking-widest">Match</div>
-                    </div>
- 
-                    <a href={s.link} target="_blank" rel="noopener noreferrer"
-                      className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/5 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all text-[var(--foreground-muted)] group/btn">
-                      <ExternalLink className="w-5 h-5 group-hover/btn:scale-110 transition-transform" />
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {s.amount && s.amount !== '—' && (
+                    <span
+                      className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-full"
+                      style={{
+                        background: 'rgba(16,185,129,0.12)',
+                        color: 'var(--success)',
+                      }}
+                    >
+                      {s.amount}
+                    </span>
+                  )}
+                  {s.deadline && s.deadline !== '—' && (
+                    <span
+                      className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-full inline-flex items-center gap-1"
+                      style={{
+                        background: 'var(--background-secondary)',
+                        color: 'var(--foreground-secondary)',
+                      }}
+                    >
+                      <Calendar className="w-2.5 h-2.5" /> {s.deadline}
+                    </span>
+                  )}
+                  <span
+                    className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-full inline-flex items-center gap-1"
+                    style={{
+                      background: 'var(--background-secondary)',
+                      color: 'var(--foreground-secondary)',
+                    }}
+                  >
+                    <Globe className="w-2.5 h-2.5" /> {country.name}
+                  </span>
+                </div>
+
+                <p
+                  className="text-xs leading-relaxed mt-1"
+                  style={{ color: 'var(--foreground-secondary)' }}
+                >
+                  {s.fitReason}
+                </p>
+
+                <div className="flex items-center gap-2 mt-auto pt-2">
+                  <a
+                    href={s.applyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-primary text-xs flex items-center gap-1"
+                  >
+                    Apply <ExternalLink className="w-3 h-3" />
+                  </a>
+                  {s.sourceUrl && s.sourceUrl !== s.applyUrl && (
+                    <a
+                      href={s.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs flex items-center gap-1"
+                      style={{ color: 'var(--foreground-muted)' }}
+                    >
+                      Source <ExternalLink className="w-3 h-3" />
                     </a>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </AnimatePresence>
-        ) : (
-          <div className="py-20 text-center opacity-50">
-            <Search className="w-12 h-12 mx-auto mb-4" />
-            <p>No scholarships found for this criteria. Try a broader search.</p>
+                  )}
+                </div>
+              </motion.div>
+            ))}
           </div>
-        )}
-      </div>
+        </AnimatePresence>
+      )}
+    </div>
+  )
+}
+
+// ── Subcomponents ───────────────────────────────────────────────────────────
+function PillSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: string[]
+  onChange: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative">
+      <label
+        className="text-[10px] uppercase tracking-widest font-bold block mb-1.5"
+        style={{ color: 'var(--foreground-muted)' }}
+      >
+        {label}
+      </label>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="input-field flex items-center justify-between w-full"
+      >
+        <span style={{ color: 'var(--foreground)' }}>{value}</span>
+        <ChevronDown className="w-4 h-4" />
+      </button>
+      {open && (
+        <>
+          <div
+            onClick={() => setOpen(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 200 }}
+          />
+          <div
+            className="absolute mt-1 w-full rounded-lg shadow-lg"
+            style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              maxHeight: 280,
+              overflowY: 'auto',
+              zIndex: 210,
+            }}
+          >
+            {options.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => {
+                  onChange(opt)
+                  setOpen(false)
+                }}
+                className="w-full text-left px-3 py-2 text-sm"
+                style={{
+                  background: opt === value ? 'var(--primary-light)' : 'transparent',
+                  color: opt === value ? 'white' : 'var(--foreground)',
+                }}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function CountryPicker({
+  label,
+  selected,
+  onChange,
+  options,
+}: {
+  label: string
+  selected: CountryOption
+  onChange: (c: CountryOption) => void
+  options: CountryOption[]
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase()
+    if (!s) return options
+    return options.filter((c) => c.name.toLowerCase().includes(s))
+  }, [options, q])
+
+  return (
+    <div className="relative">
+      <label
+        className="text-[10px] uppercase tracking-widest font-bold block mb-1.5"
+        style={{ color: 'var(--foreground-muted)' }}
+      >
+        {label}
+      </label>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="input-field flex items-center justify-between w-full"
+      >
+        <span style={{ color: 'var(--foreground)' }}>{selected.name}</span>
+        <ChevronDown className="w-4 h-4" />
+      </button>
+      {open && (
+        <>
+          <div
+            onClick={() => setOpen(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 200 }}
+          />
+          <div
+            className="absolute mt-1 w-full rounded-lg shadow-lg"
+            style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              maxHeight: 320,
+              overflow: 'hidden',
+              zIndex: 210,
+            }}
+          >
+            <div
+              className="p-2 sticky top-0"
+              style={{
+                background: 'var(--surface)',
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
+              <div className="relative">
+                <Search
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
+                  style={{ color: 'var(--foreground-muted)' }}
+                />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search 200+ countries…"
+                  autoFocus
+                  className="input-field pl-10 pr-9 text-sm"
+                />
+                {q && (
+                  <button
+                    onClick={() => setQ('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2"
+                  >
+                    <X className="w-3.5 h-3.5" style={{ color: 'var(--foreground-muted)' }} />
+                  </button>
+                )}
+              </div>
+            </div>
+            <div style={{ maxHeight: 250, overflowY: 'auto' }}>
+              {filtered.length === 0 ? (
+                <div
+                  className="p-3 text-xs text-center"
+                  style={{ color: 'var(--foreground-muted)' }}
+                >
+                  No matches
+                </div>
+              ) : (
+                filtered.map((c) => (
+                  <button
+                    key={c.code}
+                    onClick={() => {
+                      onChange(c)
+                      setOpen(false)
+                      setQ('')
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm"
+                    style={{
+                      background:
+                        c.code === selected.code ? 'var(--primary-light)' : 'transparent',
+                      color: c.code === selected.code ? 'white' : 'var(--foreground)',
+                    }}
+                  >
+                    {c.name}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
