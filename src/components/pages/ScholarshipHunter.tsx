@@ -109,18 +109,20 @@ export default function ScholarshipHunter() {
       {/* Search Bar */}
       <form onSubmit={searchScholarships} className="relative group">
         <div className="absolute inset-0 bg-indigo-500/10 blur-2xl rounded-full opacity-0 group-focus-within:opacity-100 transition-opacity" />
-        <div className="relative flex items-center gap-2 p-2 bg-[#161725] border border-[var(--foreground-muted)] rounded-2xl shadow-2xl">
-          <Search className="w-5 h-5 ml-4 text-[var(--foreground-muted)]" />
-          <input 
-            className="flex-1 bg-transparent border-none outline-none py-4 px-2 text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] text-lg"
-            placeholder="Search by program, country or specific criteria (e.g. STEM women scholarships)..."
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-          />
+        <div className="relative flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 bg-[#161725] border border-[var(--foreground-muted)] rounded-2xl shadow-2xl">
+          <div className="flex items-center flex-1">
+            <Search className="w-5 h-5 ml-4 text-[var(--foreground-muted)]" />
+            <input 
+              className="flex-1 bg-transparent border-none outline-none py-4 px-2 text-[var(--foreground)] placeholder:text-[var(--foreground-muted)] text-sm sm:text-lg"
+              placeholder="Search (e.g. STEM women)..."
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+          </div>
           <button type="submit" disabled={loading}
-            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-[var(--foreground)] px-8 py-4 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-indigo-500/20">
+            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-[var(--foreground)] px-6 sm:px-8 py-3 sm:py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-500/20">
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-            {loading ? 'Hunting...' : 'Find Scholarships'}
+            <span className="whitespace-nowrap">{loading ? 'Hunting...' : 'Find Scholarships'}</span>
           </button>
         </div>
       </form>
@@ -174,21 +176,21 @@ export default function ScholarshipHunter() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-8 w-full md:w-auto pt-4 md:pt-0 border-t md:border-t-0 border-white/5">
-                    <div className="text-right flex-1 md:flex-none">
-                      <div className="text-xl font-black text-amber-500">₹{formatINR(s.amount)}</div>
-                      <div className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Est. Reward</div>
+                  <div className="flex items-center justify-between w-full md:w-auto pt-4 md:pt-0 border-t md:border-t-0 border-white/5 gap-4">
+                    <div className="text-left md:text-right flex-1 md:flex-none">
+                      <div className="text-lg sm:text-xl font-black text-amber-500">₹{formatINR(s.amount)}</div>
+                      <div className="text-[9px] sm:text-[10px] font-bold text-white/20 uppercase tracking-widest">Est. Reward</div>
                     </div>
                     
                     <div className="text-center">
-                      <div className={`text-2xl font-black ${s.matchScore >= 80 ? 'text-green-500' : s.matchScore >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
+                      <div className={`text-xl sm:text-2xl font-black ${s.matchScore >= 80 ? 'text-green-500' : s.matchScore >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
                         {s.matchScore}%
                       </div>
-                      <div className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Match</div>
+                      <div className="text-[9px] sm:text-[10px] font-bold text-white/20 uppercase tracking-widest">Match</div>
                     </div>
-
+ 
                     <a href={s.link} target="_blank" rel="noopener noreferrer"
-                      className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all text-[var(--foreground-muted)] group/btn">
+                      className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/5 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all text-[var(--foreground-muted)] group/btn">
                       <ExternalLink className="w-5 h-5 group-hover/btn:scale-110 transition-transform" />
                     </a>
                   </div>

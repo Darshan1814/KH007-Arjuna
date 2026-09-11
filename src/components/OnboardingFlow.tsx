@@ -127,20 +127,22 @@ export default function OnboardingFlow() {
             <span className="text-xl font-bold text-white tracking-tight">EduFin<span className="text-indigo-400">AI</span></span>
           </div>
           
-          <div className="flex justify-between relative">
-            <div className="absolute top-4 left-0 right-0 h-[2px] bg-white/5 -z-0" />
-            {steps.map((s, i) => (
-              <div key={i} className="flex flex-col items-center gap-2 relative z-10">
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-500 ${
-                  i <= step ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]' : 'bg-[#1f2135] text-white/30'
-                }`}>
-                  {i < step ? <Check className="w-5 h-5" /> : i + 1}
+          <div className="flex justify-between relative overflow-x-auto pb-4 sm:pb-0 scrollbar-hide">
+            <div className="absolute top-4 left-0 right-0 h-[2px] bg-white/5 -z-0 min-w-[400px]" />
+            <div className="flex justify-between w-full min-w-[400px]">
+              {steps.map((s, i) => (
+                <div key={i} className="flex flex-col items-center gap-2 relative z-10">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-500 ${
+                    i <= step ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]' : 'bg-[#1f2135] text-white/30'
+                  }`}>
+                    {i < step ? <Check className="w-5 h-5" /> : i + 1}
+                  </div>
+                  <span className={`text-[10px] font-medium uppercase tracking-wider whitespace-nowrap ${i <= step ? 'text-indigo-400' : 'text-white/20'}`}>
+                    {s.title}
+                  </span>
                 </div>
-                <span className={`text-[10px] font-medium uppercase tracking-wider ${i <= step ? 'text-indigo-400' : 'text-white/20'}`}>
-                  {s.title}
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
 

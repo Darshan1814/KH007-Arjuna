@@ -157,12 +157,12 @@ export default function LandingPage() {
 
           {/* Stats */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1 }}
-            className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 max-w-2xl mx-auto">
+            className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 max-w-2xl mx-auto">
             {stats.map(s => (
-              <div key={s.label} className="card text-center" style={{ padding: '1rem' }}>
-                <s.icon className="w-5 h-5 mx-auto mb-2" style={{ color: 'var(--primary-light)' }} />
-                <div className="text-2xl font-extrabold" style={{ color: 'var(--foreground)' }}>{s.value}</div>
-                <div className="text-xs" style={{ color: 'var(--foreground-muted)' }}>{s.label}</div>
+              <div key={s.label} className="card text-center !p-3 sm:!p-4">
+                <s.icon className="w-4 h-4 sm:w-5 sm:h-5 mx-auto mb-1 sm:mb-2" style={{ color: 'var(--primary-light)' }} />
+                <div className="text-xl sm:text-2xl font-extrabold" style={{ color: 'var(--foreground)' }}>{s.value}</div>
+                <div className="text-[10px] sm:text-xs" style={{ color: 'var(--foreground-muted)' }}>{s.label}</div>
               </div>
             ))}
           </motion.div>

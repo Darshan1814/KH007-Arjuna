@@ -158,7 +158,7 @@ export default function DashboardLayout() {
     <div className="flex min-h-screen" style={{ background: 'var(--background)' }}>
       {/* Overlay for mobile */}
       {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={toggleSidebar} />
+        <div className="fixed inset-0 bg-black/60 z-[90] md:hidden" onClick={toggleSidebar} />
       )}
 
       {/* Sidebar */}
@@ -262,7 +262,7 @@ export default function DashboardLayout() {
       {/* Main content */}
       <main className="flex-1 md:ml-[260px]">
         {/* Top bar */}
-        <header className="sticky top-0 z-20 flex items-center justify-between px-4 sm:px-6 py-3 glass"
+        <header className="sticky top-0 z-[80] flex items-center justify-between px-4 sm:px-6 py-3 glass"
           style={{ borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center gap-3">
             <button onClick={toggleSidebar} className="md:hidden" style={{ color: 'var(--foreground)' }}>

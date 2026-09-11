@@ -262,19 +262,19 @@ export default function LoanCenter() {
               </div>
 
               {/* Right: Actions */}
-              <div className="flex flex-col gap-2 lg:w-44 flex-shrink-0">
+              <div className="flex flex-col sm:flex-row lg:flex-col gap-2 lg:w-44 flex-shrink-0">
                 {nbfc.eligible && (
                   <a href={nbfc.applyLink} target="_blank" rel="noopener noreferrer"
-                    className="btn-primary text-sm flex items-center justify-center gap-2 py-2">
+                    className="btn-primary text-sm flex items-center justify-center gap-2 py-2 flex-1">
                     Apply Now <ArrowRight className="w-4 h-4" />
                   </a>
                 )}
                 <a href={nbfc.website} target="_blank" rel="noopener noreferrer"
-                  className="btn-secondary text-xs flex items-center justify-center gap-1 py-2">
+                  className="btn-secondary text-xs flex items-center justify-center gap-1 py-2 flex-1">
                   <Globe className="w-3 h-3" /> Website
                 </a>
                 {nbfc.phone !== 'N/A (Online only)' && (
-                  <div className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--foreground-muted)' }}>
+                  <div className="flex items-center justify-center lg:justify-start gap-1 text-[10px]" style={{ color: 'var(--foreground-muted)' }}>
                     <Phone className="w-3 h-3" /> {nbfc.phone}
                   </div>
                 )}
