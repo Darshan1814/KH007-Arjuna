@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "EduPilot AI",
+  "version": "1.0.0",
+  "description": "Your AI Copilot for higher education and study abroad planning.",
+  "action": {},
+  "background": {
+    "service_worker": "src/background.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content.tsx"]
+    }
+  ],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ]
+}

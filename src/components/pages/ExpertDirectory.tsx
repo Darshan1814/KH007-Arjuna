@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Search, Star, ShieldCheck, Clock, Lock, CheckCircle, GraduationCap, MapPin, Briefcase, Loader2 } from 'lucide-react'
+import { Search, Star, ShieldCheck, Clock, Lock, CheckCircle, GraduationCap, MapPin, Briefcase, Loader2, MessageSquare } from 'lucide-react'
 import { useNetworkStore } from '@/lib/networkStore'
 import { useAppStore } from '@/lib/store'
 import { createClient } from '@/lib/supabase/client'
@@ -14,26 +14,35 @@ export default function ExpertDirectory() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterSpec, setFilterSpec] = useState('')
   const [experts, setExperts] = useState<any[]>([])
+  const [sessions, setSessions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   const supabase = createClient()
 
   useEffect(() => {
-    const fetchExperts = async () => {
+    const fetchExpertsAndSessions = async () => {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'expert')
       
-      if (data && !error) {
-        setExperts(data)
+      const [expertsRes, sessionsRes] = await Promise.all([
+        supabase.from('profiles').select('*').eq('role', 'expert'),
+        supabase.from('chat_sessions').select('*').eq('student_id', profile.id)
+      ])
+      
+      if (expertsRes.data && !expertsRes.error) {
+        setExperts(expertsRes.data)
       }
+      
+      if (sessionsRes.data && !sessionsRes.error) {
+        setSessions(sessionsRes.data)
+      }
+      
       setLoading(false)
     }
 
-    fetchExperts()
-  }, [])
+    if (profile.id) {
+      fetchExpertsAndSessions()
+    }
+  }, [profile.id])
 
   const filteredExperts = experts.filter(e => {
     const matchesSearch = (e.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -42,10 +51,33 @@ export default function ExpertDirectory() {
     return matchesSearch && matchesSpec
   })
 
-  const handleConnect = (expertId: string) => {
-    createChatSession(profile.id || 'current-user', expertId)
-    setCurrentPage('user-expert-chat')
-    toast.success('Chat initiated!')
+  const handleConnect = async (expertId: string) => {
+    if (!profile.id) return
+
+    const existingSession = sessions.find(s => s.expert_id === expertId)
+    
+    if (existingSession) {
+      if (existingSession.status === 'active') {
+        setCurrentPage('user-expert-chat')
+      } else {
+        toast('Request is still pending', { icon: '⏳' })
+      }
+      return
+    }
+
+    // Create new session
+    const { data, error } = await supabase.from('chat_sessions').insert({
+      student_id: profile.id,
+      expert_id: expertId,
+      status: 'pending'
+    }).select().single()
+
+    if (error) {
+      toast.error('Failed to send request: ' + error.message)
+    } else if (data) {
+      setSessions(prev => [...prev, data])
+      toast.success('Connection request sent!')
+    }
   }
 
   return (
@@ -153,21 +185,37 @@ export default function ExpertDirectory() {
                 </div>
               </div>
 
-              <button 
-                onClick={() => handleConnect(expert.id as string)}
-                disabled={!isVerified}
-                className={`w-full py-2.5 rounded-lg flex items-center justify-center gap-2 text-sm font-bold transition-all ${
-                  isVerified 
-                    ? 'bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/20' 
-                    : 'bg-white/5 text-foreground-muted cursor-not-allowed'
-                }`}
-              >
-                {isVerified ? (
-                  <>Connect with {(expert.name || 'Expert').split(' ')[0]}</>
-                ) : (
-                  <><Lock className="w-4 h-4" /> Verification Pending</>
-                )}
-              </button>
+              {(() => {
+                const session = sessions.find(s => s.expert_id === expert.id)
+                const isPending = session?.status === 'pending'
+                const isActive = session?.status === 'active'
+
+                return (
+                  <button 
+                    onClick={() => handleConnect(expert.id as string)}
+                    disabled={!isVerified || isPending}
+                    className={`w-full py-2.5 rounded-lg flex items-center justify-center gap-2 text-sm font-bold transition-all ${
+                      isActive 
+                        ? 'bg-indigo-500 text-white hover:bg-indigo-600 shadow-lg shadow-indigo-500/20'
+                        : isPending
+                        ? 'bg-amber-500/20 text-amber-500 cursor-wait border border-amber-500/30'
+                        : isVerified 
+                        ? 'bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/20' 
+                        : 'bg-white/5 text-foreground-muted cursor-not-allowed'
+                    }`}
+                  >
+                    {!isVerified ? (
+                      <><Lock className="w-4 h-4" /> Verification Pending</>
+                    ) : isActive ? (
+                      <><MessageSquare className="w-4 h-4" /> Message</>
+                    ) : isPending ? (
+                      <><Clock className="w-4 h-4" /> Request Pending</>
+                    ) : (
+                      <>Connect with {(expert.name || 'Expert').split(' ')[0]}</>
+                    )}
+                  </button>
+                )
+              })()}
             </motion.div>
           )
         })}

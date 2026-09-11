@@ -46,12 +46,18 @@ export default function AdminKYC() {
     setActionLoading(true)
     
     try {
-      const { error } = await supabase.from('profiles').update({ kyc_status: 'verified', kyc_rejection_reason: null }).eq('id', selectedExpert.id)
-      if (error) throw error
+      const res = await fetch('/api/admin/expert-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve', expertId: selectedExpert.id })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to approve expert')
       
+      const updatedRow = { ...selectedExpert, kyc_status: 'verified', kyc_rejection_reason: null }
       toast.success('Agent verified successfully')
       setSelectedExpert(null)
-      fetchExperts()
+      setExperts(prev => prev.map(e => e.id === updatedRow.id ? updatedRow : e))
     } catch (err: any) {
       toast.error('Failed to verify expert: ' + err.message)
     } finally {
@@ -67,18 +73,20 @@ export default function AdminKYC() {
     setActionLoading(true)
     
     try {
-      const { error } = await supabase.from('profiles').update({ 
-        kyc_status: 'rejected',
-        kyc_rejection_reason: rejectReason
-      }).eq('id', selectedExpert.id)
+      const res = await fetch('/api/admin/expert-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject', expertId: selectedExpert.id, reason: rejectReason })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to reject expert')
       
-      if (error) throw error
-      
+      const updatedRow = { ...selectedExpert, kyc_status: 'rejected', kyc_rejection_reason: rejectReason }
       toast.success('Application rejected')
       setSelectedExpert(null)
       setShowRejectInput(false)
       setRejectReason('')
-      fetchExperts()
+      setExperts(prev => prev.map(e => e.id === updatedRow.id ? updatedRow : e))
     } catch (err: any) {
       toast.error('Failed to reject expert: ' + err.message)
     } finally {
@@ -90,23 +98,23 @@ export default function AdminKYC() {
     if (e) e.stopPropagation()
     const idToDelete = expertId || selectedExpert?.id
     if (!idToDelete) return
-    if (!confirm('Are you sure you want to delete this application? It will reset the agent to unsubmitted.')) return
+    if (!confirm('Are you sure you want to permanently DELETE this test user? This will completely remove them from the database.')) return
     setActionLoading(true)
     
     try {
-      const { error } = await supabase.from('profiles').update({ 
-        kyc_status: 'unsubmitted',
-        kyc_documents: null,
-        kyc_rejection_reason: null
-      }).eq('id', idToDelete)
-      
-      if (error) throw error
+      const res = await fetch('/api/admin/expert-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', expertId: idToDelete })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to delete expert')
       
       toast.success('Application deleted')
       if (selectedExpert?.id === idToDelete) {
         setSelectedExpert(null)
       }
-      fetchExperts()
+      setExperts(prev => prev.filter(e => e.id !== idToDelete))
     } catch (err: any) {
       toast.error('Failed to delete application: ' + err.message)
     } finally {
