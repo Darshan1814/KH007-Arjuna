@@ -10,7 +10,7 @@ import {
   ChevronRight, ChevronLeft, Loader2, Sparkles, Check, LogOut
 } from 'lucide-react'
 import { countries } from 'countries-list'
-import Autocomplete from 'react-google-autocomplete'
+import { usePlacesWidget } from 'react-google-autocomplete'
 import type { StudentProfile } from '@/lib/types'
 import { calculateDreamScore } from '@/lib/utils'
 
@@ -65,6 +65,20 @@ const Input = ({ label, field, type = "text", placeholder = "", options = [] as 
   )
 }
 
+const SingleAutocomplete = ({ label, field, placeholder, types, localData, updateLocal, onPlaceSelected }: any) => {
+  return (
+    <div className="mb-4">
+      <label className="block text-sm font-medium text-foreground-secondary mb-1">{label}</label>
+      <input
+        className="input-field"
+        placeholder={placeholder}
+        defaultValue={localData[field] || ''}
+        onBlur={(e) => updateLocal(field, e.target.value)}
+      />
+    </div>
+  )
+}
+
 const MultiAutocomplete = ({ label, field, placeholder, localData, updateLocal }: any) => {
   const list: string[] = localData[field as keyof StudentProfile] as string[] || []
   const inputId = `multi-auto-${field}`
@@ -80,32 +94,23 @@ const MultiAutocomplete = ({ label, field, placeholder, localData, updateLocal }
     updateLocal(field, list.filter(i => i !== item))
   }
 
+
   return (
     <div className="mb-4">
       <label className="block text-sm font-medium text-foreground-secondary mb-1">{label}</label>
-      <Autocomplete
-        id={inputId}
-        apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
-        onPlaceSelected={(place) => {
-          if (place.name) {
-            handleAdd(place.name)
-            setTimeout(() => {
-              const el = document.getElementById(inputId) as HTMLInputElement
-              if (el) el.value = ''
-            }, 10)
-          }
-        }}
-        options={{ types: ['establishment'] }}
-        className="input-field"
-        placeholder={placeholder}
-        onKeyDown={(e: any) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            handleAdd(e.target.value)
-            e.target.value = ''
-          }
-        }}
-      />
+        <input
+          id={inputId}
+          type="text"
+          className="input-field"
+          placeholder={placeholder}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              handleAdd((e.target as HTMLInputElement).value)
+              ;(e.target as HTMLInputElement).value = ''
+            }
+          }}
+        />
       {list.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-2">
           {list.map(item => (
@@ -262,26 +267,24 @@ export default function OnboardingFlow() {
             {boundInput({ label: "Date of Birth", field: "dob", type: "date" })}
             {boundInput({ label: "Gender", field: "gender", options: ['Male', 'Female', 'Other'] })}
             
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-foreground-secondary mb-1">City / Location</label>
-              <Autocomplete
-                apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
-                onPlaceSelected={(place) => {
-                  let city = ''
-                  let state = ''
-                  place.address_components?.forEach(c => {
-                    if (c.types.includes('locality')) city = c.long_name
-                    if (c.types.includes('administrative_area_level_1')) state = c.long_name
-                  })
-                  updateLocal('city', city || place.name)
-                  updateLocal('state', state)
-                }}
-                options={{ types: ['(cities)'] }}
-                className="input-field"
-                placeholder="Search your city..."
-                defaultValue={localData.city || ''}
-              />
-            </div>
+            <SingleAutocomplete
+              label="City / Location"
+              field="city"
+              placeholder="Search your city..."
+              types={['(cities)']}
+              localData={localData}
+              updateLocal={updateLocal}
+              onPlaceSelected={(place: any) => {
+                let city = ''
+                let state = ''
+                place.address_components?.forEach((c: any) => {
+                  if (c.types.includes('locality')) city = c.long_name
+                  if (c.types.includes('administrative_area_level_1')) state = c.long_name
+                })
+                updateLocal('city', city || place.name)
+                updateLocal('state', state)
+              }}
+            />
             
             {boundInput({ label: "Current Education Level", field: "educationLevel", options: ['Undergraduate', 'Graduate', 'Working Professional'] })}
           </div>
@@ -296,19 +299,17 @@ export default function OnboardingFlow() {
             </div>
             {boundInput({ label: "12th Stream", field: "twelfthStream", options: ['Science', 'Commerce', 'Arts'] })}
             
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-foreground-secondary mb-1">Undergraduate College</label>
-              <Autocomplete
-                apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
-                onPlaceSelected={(place) => {
-                  updateLocal('undergradCollege', place.name || '')
-                }}
-                options={{ types: ['establishment'] }}
-                className="input-field"
-                placeholder="Search your college or university..."
-                defaultValue={localData.undergradCollege || ''}
-              />
-            </div>
+            <SingleAutocomplete
+              label="Undergraduate College"
+              field="undergradCollege"
+              placeholder="Search your college or university..."
+              types={['establishment']}
+              localData={localData}
+              updateLocal={updateLocal}
+              onPlaceSelected={(place: any) => {
+                updateLocal('undergradCollege', place.name || '')
+              }}
+            />
 
             {boundInput({ 
               label: "Degree (e.g. B.Tech)", 

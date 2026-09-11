@@ -172,6 +172,34 @@ export default function DashboardLayout() {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
 
+  // Realtime Chat Session Listener
+  useEffect(() => {
+    if (!profile.id) return
+
+    const supabase = createClient()
+    const channel = supabase.channel('global-chat-listener')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_sessions',
+          filter: `student_id=eq.${profile.id}`
+        },
+        (payload) => {
+          if (payload.new.status === 'active' && payload.old.status === 'pending') {
+            toast.success('🎉 Expert accepted your connection request!', { duration: 5000 })
+            setCurrentPage('user-expert-chat')
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [profile.id, setCurrentPage])
+
   return (
     <div className="flex min-h-screen" style={{ background: 'var(--background)' }}>
       {/* Overlay for mobile */}
