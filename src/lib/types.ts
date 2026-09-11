@@ -525,6 +525,7 @@ export type PageType =
   | 'document-vault'
   | 'growth-tools'
   | 'profile'
+  | 'extension'
   
   // User Expert Network
   | 'expert-directory'

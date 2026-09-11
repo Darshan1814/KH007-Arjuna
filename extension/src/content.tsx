@@ -4,7 +4,19 @@ import { motion } from 'framer-motion'
 import { Bot, X, Sparkles, Send, Minimize2, Maximize2, Loader2, Wand2, Volume2, VolumeX, RotateCcw, Square } from 'lucide-react'
 import tailwindStyle from './index.css?inline'
 
+// Resolved at runtime so it works no matter how the bundler fingerprints
+// the file. Falls back to the inline <Bot> icon if the resource isn't
+// declared in the manifest's web_accessible_resources.
+const LOGO_URL = (() => {
+  try {
+    return chrome.runtime.getURL('public/extension-logo.png')
+  } catch {
+    return ''
+  }
+})()
+
 // ---------- Top-level runtime listener ----------
+// Registered immediately on script load so the popup's first TOGGLE_CHAT
 // never hits "receiving end does not exist". The listener bridges into the
 // React tree via a window CustomEvent that <FloatingAssistant /> subscribes
 // to. Acks every message synchronously so the channel closes cleanly.
@@ -969,7 +981,11 @@ function FloatingAssistant() {
         className="fixed bottom-6 right-6 w-16 h-16 rounded-full bg-gradient-to-tr from-indigo-600 to-emerald-500 shadow-[0_0_30px_rgba(16,185,129,0.3)] flex items-center justify-center cursor-grab active:cursor-grabbing z-[2147483647] border-2 border-white/20 backdrop-blur-xl"
         style={{ color: 'white' }}
       >
-        <Bot className="w-8 h-8" />
+        {LOGO_URL ? (
+          <img src={LOGO_URL} alt="EduPilot" className="w-10 h-10 rounded-full object-contain" />
+        ) : (
+          <Bot className="w-8 h-8" />
+        )}
         <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-[#111b21] animate-pulse" />
       </motion.button>
     )
@@ -988,7 +1004,11 @@ function FloatingAssistant() {
     >
       <div className="p-4 bg-gradient-to-r from-indigo-900/40 to-emerald-900/40 border-b border-white/10 flex items-center justify-between cursor-grab active:cursor-grabbing text-white">
         <div className="flex items-center gap-2 pointer-events-none">
-          <Bot className="w-5 h-5 text-emerald-400" />
+          {LOGO_URL ? (
+            <img src={LOGO_URL} alt="" className="w-5 h-5 rounded-full object-contain" />
+          ) : (
+            <Bot className="w-5 h-5 text-emerald-400" />
+          )}
           <span className="font-bold tracking-wide text-sm">Arjuna Sarathi AI</span>
         </div>
         <div className="flex items-center gap-1">

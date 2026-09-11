@@ -9,7 +9,7 @@ import {
   DollarSign, Calculator, BookOpen, Shield, MessageCircle,
   Award, Users, Globe, Menu, X, Flame, Star, Zap, Newspaper,
   Sun, Moon, ClipboardList, Calendar, Trophy, UserCheck, Gift,
-  PenTool, FileText, User, LogOut
+  PenTool, FileText, User, LogOut, Puzzle
 } from 'lucide-react'
 import type { PageType } from '@/lib/types'
 import DashboardHome from './pages/DashboardHome'
@@ -45,6 +45,7 @@ import ExpertDirectory from './pages/ExpertDirectory'
 import UserExpertChat from './pages/UserExpertChat'
 import AIEducationJourney from './pages/AIEducationJourney'
 import CollegeMatch from './pages/CollegeMatch'
+import ExtensionPage from './pages/ExtensionPage'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 import { usePresence } from '@/lib/usePresence'
@@ -110,6 +111,7 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
       { icon: Trophy, label: 'Achievements', page: 'gamification' },
       { icon: Gift, label: 'Referrals', page: 'referrals' },
       { icon: PenTool, label: 'Growth Tools', page: 'growth-tools' },
+      { icon: Puzzle, label: 'Extension', page: 'extension' },
     ]
   }
 ]
@@ -141,6 +143,7 @@ function PageContent({ page }: { page: PageType }) {
     case 'interview-prep': return <InterviewPrep />
     case 'referrals': return <ReferralPage />
     case 'growth-tools': return <GrowthTools />
+    case 'extension': return <ExtensionPage />
     case 'profile': return <ProfilePage />
     case 'expert-directory': return <ExpertDirectory />
     case 'user-expert-chat': return <UserExpertChat />

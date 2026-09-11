@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import './index.css'
 import {
-  Bot,
   GraduationCap,
   CheckCircle2,
   Wand2,
@@ -44,7 +43,7 @@ function Popup() {
     <div className="flex flex-col h-full bg-[#0b141a] text-gray-100 p-5 overflow-hidden">
       <div className="flex items-center gap-3 mb-5">
         <div className="p-2.5 bg-indigo-500/20 rounded-xl border border-indigo-500/20">
-          <Bot className="w-6 h-6 text-indigo-400" />
+          <img src={chrome.runtime.getURL('public/extension-logo.png')} alt="EduPilot" className="w-6 h-6 rounded-full object-contain" />
         </div>
         <div className="flex-1">
           <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-emerald-400">
