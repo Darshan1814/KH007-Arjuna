@@ -248,6 +248,139 @@ export interface DomesticCollegeResult {
   feesLabel: string
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Domestic College Detail — rich stats shown when a student opens a college
+// from the Domestic Admission Predictor. Fetched from `/api/college-detail`
+// (Gemini-backed) with a graceful fallback. All figures are AI-estimated and
+// flagged as such in the UI.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Placement statistics for a single year of a branch/program. */
+export interface PlacementYearStat {
+  /** Placement year, e.g. "2025" or "2024-25". */
+  year: string
+  /** Percentage of students placed (0–100). */
+  placementRate: number
+  /** Average annual package in LPA (lakhs per annum). */
+  avgPackageLPA: number
+  /** Median annual package in LPA. */
+  medianPackageLPA: number
+  /** Highest annual package in LPA. */
+  highestPackageLPA: number
+  /** Notable recruiters for this branch in this year. */
+  topRecruiters: string[]
+}
+
+/** Year-wise placement statistics for a single branch/program at a college. */
+export interface BranchPlacementStat {
+  branch: string
+  /** One entry per placement year, most recent first. */
+  years: PlacementYearStat[]
+}
+
+/** A single student review of the college. */
+export interface CollegeReview {
+  author: string
+  /** Overall rating out of 5. */
+  rating: number
+  /** Graduating batch year or "Current student". */
+  batch: string
+  branch: string
+  pros: string
+  cons: string
+  comment: string
+  /** Link to the source review (e.g. Glassdoor / Shiksha) when available. */
+  sourceUrl?: string
+}
+
+/** One year of a branch's curriculum outline. */
+export interface CurriculumYear {
+  year: string
+  subjects: string[]
+}
+
+/** Curriculum for a single branch. */
+export interface BranchCurriculum {
+  branch: string
+  durationYears: number
+  degree: string
+  years: CurriculumYear[]
+}
+
+/** Campus / facilities information. */
+export interface CampusInfo {
+  established: number | null
+  campusSizeAcres: number | null
+  hostelAvailable: boolean
+  facilities: string[]
+  accreditation: string[]
+  nirfRank: number | null
+  location: string
+  summary: string
+}
+
+/** Full college detail payload returned by `/api/college-detail`. */
+export interface DomesticCollegeDetailData {
+  name: string
+  city: string
+  state: string
+  collegeType: string
+  /** One-line description / overview of the college. */
+  overview: string
+  /** Overall rating out of 5 (aggregate of reviews). */
+  overallRating: number
+  /** Per-branch placement statistics (user picks which to view). */
+  placements: BranchPlacementStat[]
+  /** Per-branch curriculum outlines (user picks which to view). */
+  curricula: BranchCurriculum[]
+  /** Student reviews. */
+  reviews: CollegeReview[]
+  /** Campus / facilities information. */
+  campus: CampusInfo
+  /** Key quick-stat highlights (label/value pairs). */
+  quickStats: { label: string; value: string }[]
+}
+
+/**
+ * A single real education-loan product for the selected domestic college,
+ * fetched live via Serper + Gemini from `/api/domestic-loans`. URLs are taken
+ * verbatim from search results (never invented).
+ */
+export interface DomesticLoanResult {
+  /** Loan product name, e.g. "SBI Scholar Loan". */
+  name: string
+  /** Lender, e.g. "State Bank of India". */
+  provider: string
+  /** Lender category: Bank, NBFC, Govt Scheme, etc. */
+  providerType: string
+  /** Short factual summary of the product. */
+  summary: string
+  /** Why this product fits the selected college / profile. */
+  fitReason: string
+  /** Human-readable interest rate band, e.g. "8.5% – 11.0% p.a.". */
+  interestRate: string
+  /** Maximum loan amount in INR. */
+  maxLoanINR: number
+  /** Human-readable tenure, e.g. "Up to 15 years". */
+  tenure: string
+  /** Collateral note. */
+  collateral: string
+  /** Processing fee note. */
+  processingFee: string
+  /** Moratorium note. */
+  moratorium: string
+  /** Notable features / benefits. */
+  features: string[]
+  /** Official apply URL (verbatim from search results). */
+  applyUrl: string
+  /** Source URL the data was grounded in. */
+  sourceUrl: string
+  /** Source hostname for display. */
+  sourceName: string
+  /** Whether this product is specifically tied to / better for this college. */
+  collegeSpecific: boolean
+}
+
 export interface University {
   id: string
   name: string
@@ -413,6 +546,7 @@ export type PageType =
   // Domestic Track MVP
   | 'domestic-admission-predictor'
   | 'domestic-loan-center'
+  | 'domestic-college-detail'
 
 // Loan Application types
 export type LoanAppStep = 'eligibility' | 'documents' | 'form' | 'tracking'

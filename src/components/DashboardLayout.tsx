@@ -17,6 +17,7 @@ import CareerNavigator from './pages/CareerNavigator'
 import ROICalculator from './pages/ROICalculator'
 import AdmissionPredictor from './pages/AdmissionPredictor'
 import DomesticAdmissionPredictor from './pages/DomesticAdmissionPredictor'
+import DomesticCollegeDetail from './pages/DomesticCollegeDetail'
 import LoanCenter from './pages/LoanCenter'
 import DomesticLoanCenter from './pages/DomesticLoanCenter'
 import EMICalculator from './pages/EMICalculator'
@@ -122,6 +123,7 @@ function PageContent({ page }: { page: PageType }) {
     case 'admission-predictor': return <AdmissionPredictor />
     case 'college-match': return <CollegeMatch />
     case 'domestic-admission-predictor': return <DomesticAdmissionPredictor />
+    case 'domestic-college-detail': return <DomesticCollegeDetail />
     case 'loan-center': return <LoanCenter />
     case 'domestic-loan-center': return <DomesticLoanCenter />
     case 'emi-calculator': return <EMICalculator />

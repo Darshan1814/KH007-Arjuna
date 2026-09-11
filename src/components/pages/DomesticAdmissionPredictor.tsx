@@ -38,6 +38,9 @@ import {
   MapPin,
   Hash,
   Award,
+  BarChart3,
+  Download,
+  DollarSign,
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import type { DomesticCollegeResult, EntranceExamStream } from '@/lib/types'
@@ -67,6 +70,8 @@ export default function DomesticAdmissionPredictor({
 }: { embedded?: boolean } = {}) {
   const profile = useAppStore((s) => s.profile)
   const updateProfile = useAppStore((s) => s.updateProfile)
+  const setCurrentPage = useAppStore((s) => s.setCurrentPage)
+  const setSelectedCollege = useAppStore((s) => s.setSelectedCollege)
 
   const exams = useMemo(() => profile.entranceExams ?? [], [profile.entranceExams])
   const category = profile.reservationCategory ?? 'General'
@@ -169,6 +174,58 @@ export default function DomesticAdmissionPredictor({
     if (!needle) return colleges
     return colleges.filter((c) => c.name.toLowerCase().includes(needle))
   }, [colleges, search])
+
+  // Export the currently-shown ranked list to a CSV file.
+  const downloadCSV = () => {
+    if (filtered.length === 0) return
+    const headers = [
+      'Rank',
+      'College',
+      'Branch',
+      'College Type',
+      'City',
+      'State',
+      'Exam',
+      'Closing Cutoff',
+      'Cutoff Type',
+      'Fees',
+    ]
+    // Quote/escape a field per RFC 4180 (wrap in quotes, double inner quotes).
+    const esc = (v: unknown) => {
+      const s = String(v ?? '')
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    }
+    const rows = filtered.map((c, i) =>
+      [
+        i + 1,
+        c.name,
+        c.branch,
+        c.collegeType,
+        c.city,
+        c.state,
+        c.examName,
+        c.closingRank ?? c.cutoffLabel,
+        c.cutoffType ?? '',
+        c.feesLabel,
+      ]
+        .map(esc)
+        .join(','),
+    )
+    const csv = [headers.join(','), ...rows].join('\n')
+    // Prepend BOM so Excel reads UTF-8 (₹ etc.) correctly.
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const safeBranch = branch.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
+    const safeCity =
+      cityFilter === ALL_CITIES ? 'all-cities' : cityFilter.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
+    a.href = url
+    a.download = `colleges-${safeBranch}-${safeCity}-${category}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -416,7 +473,7 @@ export default function DomesticAdmissionPredictor({
       {/* Result list — ranked best-first by closing cutoff */}
       {hasExams && filtered.length > 0 && (
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <span
               className="text-xs font-semibold uppercase tracking-wide"
               style={{ color: 'var(--foreground-muted)' }}
@@ -424,17 +481,44 @@ export default function DomesticAdmissionPredictor({
               {branch} · ranked by closing cutoff ({category})
               {cityFilter !== ALL_CITIES ? ` · ${cityFilter}` : ''}
             </span>
+            <button
+              type="button"
+              onClick={downloadCSV}
+              className="btn-secondary inline-flex items-center gap-1 text-xs"
+            >
+              <Download className="w-3.5 h-3.5" /> Download CSV
+            </button>
           </div>
 
           {filtered.map((record, i) => {
             const isSelected = profile.targetInstituteId === record.id
+            const openDetail = () => {
+              setSelectedCollege(record)
+              setCurrentPage('domestic-college-detail')
+            }
+            const openLoans = () => {
+              // Make this college the loan target and hand it to the loan
+              // center, which fetches real college-specific loans from it.
+              setSelectedCollege(record)
+              updateProfile({ targetInstituteId: record.id })
+              setCurrentPage('domestic-loan-center')
+            }
             return (
               <motion.div
                 key={record.id}
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: Math.min(i, 12) * 0.03 }}
-                className="card glass glass-hover flex flex-col sm:flex-row sm:items-center gap-4"
+                onClick={openDetail}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    openDetail()
+                  }
+                }}
+                className="card glass glass-hover flex flex-col sm:flex-row sm:items-center gap-4 cursor-pointer"
                 style={{ padding: '1rem 1.25rem' }}
               >
                 {/* Rank number within the ascending list */}
@@ -498,22 +582,46 @@ export default function DomesticAdmissionPredictor({
                       closing for your category
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateProfile({ targetInstituteId: record.id })
-                    }
-                    className={isSelected ? 'btn-primary' : 'btn-secondary'}
-                    aria-pressed={isSelected}
-                  >
-                    {isSelected ? (
-                      <span className="inline-flex items-center gap-1">
-                        <Check className="w-4 h-4" /> Selected
-                      </span>
-                    ) : (
-                      'Select'
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openDetail()
+                      }}
+                      className="btn-secondary inline-flex items-center gap-1"
+                    >
+                      <BarChart3 className="w-4 h-4" /> View details
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openLoans()
+                      }}
+                      className="btn-secondary inline-flex items-center gap-1"
+                    >
+                      <DollarSign className="w-4 h-4" /> View loans
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedCollege(record)
+                        updateProfile({ targetInstituteId: record.id })
+                      }}
+                      className={isSelected ? 'btn-primary' : 'btn-secondary'}
+                      aria-pressed={isSelected}
+                    >
+                      {isSelected ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Check className="w-4 h-4" /> Selected
+                        </span>
+                      ) : (
+                        'Select'
+                      )}
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )

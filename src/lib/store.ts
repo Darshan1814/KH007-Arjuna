@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { StudentProfile, ChatMessage, PageType, Notification } from './types'
+import type { StudentProfile, ChatMessage, PageType, Notification, DomesticCollegeResult } from './types'
 import { User } from '@supabase/supabase-js'
 
 export type ThemeMode = 'dark' | 'light'
@@ -29,6 +29,11 @@ interface AppState {
   setOnboarded: (value: boolean) => void
   targetOnboardingStep: number | null
   setTargetOnboardingStep: (step: number | null) => void
+
+  // Domestic college selected for the detail page (set when the user clicks a
+  // college in the Domestic Admission Predictor).
+  selectedCollege: DomesticCollegeResult | null
+  setSelectedCollege: (college: DomesticCollegeResult | null) => void
 
   // Chat
   chatMessages: ChatMessage[]
@@ -130,6 +135,10 @@ export const useAppStore = create<AppState>()(
       targetOnboardingStep: null,
       setTargetOnboardingStep: (step) => set({ targetOnboardingStep: step }),
 
+      // Domestic college detail selection
+      selectedCollege: null,
+      setSelectedCollege: (college) => set({ selectedCollege: college }),
+
       // Chat
       chatMessages: [],
       addChatMessage: (message) =>
@@ -210,6 +219,7 @@ export const useAppStore = create<AppState>()(
         theme: state.theme,
         notifications: state.notifications,
         currentPage: state.currentPage,
+        selectedCollege: state.selectedCollege,
       }),
     }
   )

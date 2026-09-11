@@ -25,7 +25,7 @@
 //   - Does NOT import `LoanCenter.tsx` (Req 16).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   DollarSign,
@@ -35,6 +35,10 @@ import {
   ArrowRight,
   Wallet,
   ShieldCheck,
+  Loader2,
+  Sparkles,
+  ExternalLink,
+  Star,
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import {
@@ -51,6 +55,7 @@ import {
 import { formatINR } from '@/lib/utils'
 import type {
   DomesticLoanProduct,
+  DomesticLoanResult,
   LoanEligibility,
   PageType,
 } from '@/lib/types'
@@ -174,6 +179,72 @@ export default function DomesticLoanCenter({
   const setTargetOnboardingStep = useAppStore(
     (s) => s.setTargetOnboardingStep,
   )
+  const selectedCollege = useAppStore((s) => s.selectedCollege)
+
+  // ── Live, college-specific loan discovery (Serper + Gemini) ───────────────
+  const [liveLoans, setLiveLoans] = useState<DomesticLoanResult[]>([])
+  const [liveLoading, setLiveLoading] = useState(false)
+  const [liveError, setLiveError] = useState('')
+  const [liveSource, setLiveSource] = useState<'serper+gemini' | 'empty' | ''>('')
+
+  const collegeIncome =
+    profile.familyAnnualIncomeINR != null
+      ? formatINR(profile.familyAnnualIncomeINR)
+      : profile.familyIncomeStr || ''
+  const collegeCoApplicant = profile.coApplicantStr ?? (profile.hasCoApplicant ? 'Yes' : '')
+  const collegeCollateral =
+    profile.collateralAvailableStr ?? (profile.collateralType && profile.collateralType !== 'none' ? 'Yes' : 'No')
+
+  const selectedCollegeKey = selectedCollege
+    ? `${selectedCollege.name}|${selectedCollege.city}|${selectedCollege.branch}`
+    : ''
+
+  useEffect(() => {
+    if (!selectedCollege) {
+      setLiveLoans([])
+      setLiveSource('')
+      return
+    }
+    let cancelled = false
+    const run = async () => {
+      setLiveLoading(true)
+      setLiveError('')
+      try {
+        const res = await fetch('/api/domestic-loans', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            college: {
+              name: selectedCollege.name,
+              city: selectedCollege.city,
+              state: selectedCollege.state,
+              collegeType: selectedCollege.collegeType,
+              branch: selectedCollege.branch,
+            },
+            familyIncome: collegeIncome,
+            coApplicant: collegeCoApplicant,
+            collateral: collegeCollateral,
+          }),
+        })
+        if (!res.ok) throw new Error('Failed to load loans')
+        const data = await res.json()
+        if (cancelled) return
+        const list: DomesticLoanResult[] = Array.isArray(data.options) ? data.options : []
+        setLiveLoans(list)
+        setLiveSource(list.length > 0 ? 'serper+gemini' : 'empty')
+        if (list.length === 0) setLiveError('No live loan products found for this college right now.')
+      } catch {
+        if (!cancelled) setLiveError('Could not load live loans. Showing the standard list below.')
+      } finally {
+        if (!cancelled) setLiveLoading(false)
+      }
+    }
+    run()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCollegeKey])
 
   // CSIS savings calculator inputs (defaults per the design's example).
   const [principal, setPrincipal] = useState<number>(1_000_000)
@@ -240,7 +311,8 @@ export default function DomesticLoanCenter({
       : profile.familyIncomeStr || 'Not set'
   const coApplicantDisplay = profile.coApplicantStr ?? 'Not set'
   const collateralDisplay = profile.collateralAvailableStr ?? 'Not set'
-  const targetInstituteDisplay = targetInstitute?.name ?? 'Not set'
+  const targetInstituteDisplay =
+    selectedCollege?.name ?? targetInstitute?.name ?? 'Not set'
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -356,8 +428,159 @@ export default function DomesticLoanCenter({
         </div>
       </div>
 
-      {/* ── 3. Loan products list ──────────────────────────────────────── */}
+      {/* ── 2b. Live, college-specific loans (Serper + Gemini) ─────────── */}
+      {selectedCollege && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div
+              className="text-base font-semibold flex items-center gap-2"
+              style={{ color: 'var(--foreground)' }}
+            >
+              <Sparkles className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+              Loans for {selectedCollege.name}
+            </div>
+            {liveLoading && (
+              <span
+                className="inline-flex items-center gap-2 text-xs"
+                style={{ color: 'var(--foreground-secondary)' }}
+              >
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Finding real loan
+                options...
+              </span>
+            )}
+            {!liveLoading && liveSource === 'serper+gemini' && (
+              <span className="badge badge-primary inline-flex items-center gap-1">
+                <Sparkles className="w-3 h-3" /> Live web data
+              </span>
+            )}
+          </div>
+
+          {liveError && !liveLoading && (
+            <div
+              className="text-xs"
+              style={{ color: 'var(--foreground-muted)' }}
+            >
+              {liveError}
+            </div>
+          )}
+
+          {!liveLoading &&
+            liveLoans.map((loan, i) => (
+              <motion.div
+                key={`${loan.applyUrl}-${i}`}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i, 8) * 0.04 }}
+                className="card glass glass-hover"
+              >
+                <div className="flex flex-col lg:flex-row gap-4">
+                  <div className="lg:w-64 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className="font-semibold"
+                        style={{ color: 'var(--foreground)' }}
+                      >
+                        {loan.name}
+                      </span>
+                      {loan.collegeSpecific && (
+                        <span className="badge badge-success inline-flex items-center gap-1">
+                          <Star className="w-3 h-3" /> For this college
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className="text-xs mt-0.5"
+                      style={{ color: 'var(--foreground-muted)' }}
+                    >
+                      {loan.provider} · {loan.providerType}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div>
+                      <div className="text-[10px]" style={{ color: 'var(--foreground-muted)' }}>
+                        Interest rate
+                      </div>
+                      <div className="text-sm font-bold" style={{ color: 'var(--accent)' }}>
+                        {loan.interestRate}
+                      </div>
+                    </div>
+                    {loan.maxLoanINR > 0 && (
+                      <div>
+                        <div className="text-[10px]" style={{ color: 'var(--foreground-muted)' }}>
+                          Max loan
+                        </div>
+                        <div className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
+                          {formatINR(loan.maxLoanINR)}
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <div className="text-[10px]" style={{ color: 'var(--foreground-muted)' }}>
+                        Moratorium
+                      </div>
+                      <div className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
+                        {loan.moratorium}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {loan.fitReason && (
+                  <div
+                    className="text-xs mt-3"
+                    style={{ color: 'var(--foreground-secondary)' }}
+                  >
+                    {loan.fitReason}
+                  </div>
+                )}
+
+                {loan.features.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {loan.features.slice(0, 6).map((f) => (
+                      <span key={f} className="badge badge-primary">
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3 mt-3 flex-wrap">
+                  <a
+                    href={loan.applyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-primary inline-flex items-center gap-1 text-xs"
+                  >
+                    Apply <ExternalLink className="w-3 h-3" />
+                  </a>
+                  {loan.sourceName && (
+                    <a
+                      href={loan.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="loan-link inline-flex items-center gap-1 text-xs"
+                    >
+                      Source: {loan.sourceName}
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              </motion.div>
+            ))}
+        </div>
+      )}
+
+      {/* ── 3. Loan products list (standard eligibility matcher) ───────── */}
       <div className="space-y-4">
+        {selectedCollege && liveLoans.length > 0 && (
+          <div
+            className="text-xs font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--foreground-muted)' }}
+          >
+            Standard eligibility check
+          </div>
+        )}
         {evaluatedProducts.map(({ product, result }, i) => (
           <LoanProductRow
             key={product.id}
