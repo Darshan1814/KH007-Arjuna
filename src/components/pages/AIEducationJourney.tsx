@@ -164,7 +164,7 @@ export default function AIEducationJourney() {
       </div>
 
       {/* Main Chat/Engine Container */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-8">
+      <div className="flex-1 overflow-y-auto px-3 md:px-6 pt-3 md:pt-4">
         <DecisionEngine />
         
         {/* Loading Indicator */}
