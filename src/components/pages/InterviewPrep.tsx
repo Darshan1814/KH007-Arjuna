@@ -19,6 +19,10 @@ import {
   PhoneCall,
   CheckCircle2,
   AlertTriangle,
+  Languages,
+  Send,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAppStore } from '@/lib/store'
@@ -41,6 +45,33 @@ interface TranscriptLine {
   ts: number
 }
 
+interface LanguageOption {
+  label: string
+  code: string
+  speechLocale: string
+}
+
+const SUPPORTED_LANGUAGES: LanguageOption[] = [
+  { label: 'English', code: 'en', speechLocale: 'en-US' },
+  { label: 'Hindi', code: 'hi', speechLocale: 'hi-IN' },
+  { label: 'Tamil', code: 'ta', speechLocale: 'ta-IN' },
+  { label: 'French', code: 'fr', speechLocale: 'fr-FR' },
+  { label: 'Spanish', code: 'es', speechLocale: 'es-ES' },
+  { label: 'German', code: 'de', speechLocale: 'de-DE' },
+  { label: 'Arabic', code: 'ar', speechLocale: 'ar-SA' },
+  { label: 'Portuguese', code: 'pt', speechLocale: 'pt-BR' },
+  { label: 'Korean', code: 'ko', speechLocale: 'ko-KR' },
+  { label: 'Vietnamese', code: 'vi', speechLocale: 'vi-VN' },
+  { label: 'Turkish', code: 'tr', speechLocale: 'tr-TR' },
+  { label: 'Malay', code: 'ms', speechLocale: 'ms-MY' },
+  { label: 'Romanian', code: 'ro', speechLocale: 'ro-RO' },
+  { label: 'Czech', code: 'cs', speechLocale: 'cs-CZ' },
+  { label: 'Ukrainian', code: 'uk', speechLocale: 'uk-UA' },
+  { label: 'Croatian', code: 'hr', speechLocale: 'hr-HR' },
+  { label: 'Norwegian', code: 'no', speechLocale: 'nb-NO' },
+  { label: 'Dutch', code: 'nl', speechLocale: 'nl-NL' },
+]
+
 const COUNTRY_OPTIONS = [
   'United States',
   'United Kingdom',
@@ -56,15 +87,16 @@ const COUNTRY_OPTIONS = [
 export default function InterviewPrep() {
   const { profile } = useAppStore()
 
-  // ---- track + country ----
+  // Track & Country & Language
   const [interviewType, setInterviewType] = useState<InterviewType>('visa')
   const [country, setCountry] = useState<string>(
     (profile.targetCountries && profile.targetCountries[0]) ||
       (Array.isArray(profile.targetCountry) ? profile.targetCountry[0] : '') ||
       'United States',
   )
+  const [selectedLang, setSelectedLang] = useState<LanguageOption>(SUPPORTED_LANGUAGES[0])
 
-  // ---- live news ----
+  // Live News
   const [news, setNews] = useState<NewsItem[]>([])
   const [loadingNews, setLoadingNews] = useState(false)
 
@@ -88,17 +120,30 @@ export default function InterviewPrep() {
     }
   }, [country, interviewType])
 
-  // ---- vapi call ----
+  // Interview state
   const [callStatus, setCallStatus] = useState<CallStatus>('idle')
   const [muted, setMuted] = useState(false)
   const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [scoring, setScoring] = useState(false)
   const [report, setReport] = useState<InterviewReport | null>(null)
-  const callStartRef = useRef<number>(0)
   const [elapsed, setElapsed] = useState(0)
-  const vapiRef = useRef<any>(null)
 
-  // Tick the elapsed timer while the call is live.
+  // Voice playback & recording state
+  const [isAiSpeaking, setIsAiSpeaking] = useState(false)
+  const [isUserListening, setIsUserListening] = useState(false)
+  const [currentSpeechInput, setCurrentSpeechInput] = useState('')
+  const [manualText, setManualText] = useState('')
+
+  const callStartRef = useRef<number>(0)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const recognitionRef = useRef<any>(null)
+  const transcriptRef = useRef<TranscriptLine[]>([])
+
+  useEffect(() => {
+    transcriptRef.current = transcript
+  }, [transcript])
+
+  // Elapsed timer while live
   useEffect(() => {
     if (callStatus !== 'live') return
     callStartRef.current = Date.now()
@@ -126,153 +171,271 @@ export default function InterviewPrep() {
     [profile],
   )
 
-  const startCall = async () => {
-    const publicKey = process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY
-    const assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID
-    if (!publicKey || !assistantId) {
-      toast.error('Vapi keys missing — set NEXT_PUBLIC_VAPI_PUBLIC_KEY and NEXT_PUBLIC_VAPI_ASSISTANT_ID')
-      return
+  // Stop any active audio and speech recognition
+  const stopAudioAndRecognition = () => {
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause()
+        audioRef.current.currentTime = 0
+      } catch {
+        /* ignore */
+      }
+      audioRef.current = null
     }
+    setIsAiSpeaking(false)
 
-    // Pre-check microphone access before starting the call
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null
+        recognitionRef.current.onend = null
+        recognitionRef.current.onerror = null
+        recognitionRef.current.stop()
+      } catch {
+        /* ignore */
+      }
+      recognitionRef.current = null
+    }
+    setIsUserListening(false)
+  }
+
+  // Speak AI text using ElevenLabs TTS
+  const speakText = async (text: string) => {
+    stopAudioAndRecognition()
+    setIsAiSpeaking(true)
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      stream.getTracks().forEach((t) => t.stop()) // release immediately
-    } catch (micErr: any) {
-      console.error('[vapi] mic permission denied', micErr)
-      toast.error('Microphone access denied — please allow mic permissions and try again')
+      const res = await fetch('/api/interview/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      })
+
+      if (!res.ok) {
+        throw new Error('Could not synthesize speech')
+      }
+
+      const blob = await res.blob()
+      const audioUrl = URL.createObjectURL(blob)
+      const audio = new Audio(audioUrl)
+      audioRef.current = audio
+
+      audio.onended = () => {
+        setIsAiSpeaking(false)
+        URL.revokeObjectURL(audioUrl)
+        if (callStatus === 'live' || callStatus === 'connecting') {
+          startSpeechListening()
+        }
+      }
+
+      audio.onerror = () => {
+        setIsAiSpeaking(false)
+        URL.revokeObjectURL(audioUrl)
+        if (callStatus === 'live' || callStatus === 'connecting') {
+          startSpeechListening()
+        }
+      }
+
+      await audio.play()
+    } catch (e: any) {
+      console.warn('[tts] Audio play failed, falling back to listening', e)
+      setIsAiSpeaking(false)
+      if (callStatus === 'live' || callStatus === 'connecting') {
+        startSpeechListening()
+      }
+    }
+  }
+
+  // Start SpeechRecognition in browser
+  const startSpeechListening = () => {
+    if (typeof window === 'undefined') return
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+
+    if (!SpeechRecognition) {
+      console.warn('SpeechRecognition not supported in browser, manual input available')
+      setIsUserListening(true)
       return
     }
 
+    try {
+      const recognition = new SpeechRecognition()
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.lang = selectedLang.speechLocale || 'en-US'
+
+      recognition.onstart = () => {
+        setIsUserListening(true)
+      }
+
+      recognition.onresult = (event: any) => {
+        let interim = ''
+        let final = ''
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const transcriptText = event.results[i][0].transcript
+          if (event.results[i].isFinal) {
+            final += transcriptText
+          } else {
+            interim += transcriptText
+          }
+        }
+        const combined = (final || interim).trim()
+        if (combined) {
+          setCurrentSpeechInput(combined)
+        }
+      }
+
+      recognition.onerror = (event: any) => {
+        if (event.error !== 'no-speech') {
+          console.warn('[speech-recognition] error', event.error)
+        }
+      }
+
+      recognition.onend = () => {
+        // Automatically restart if still in live mode and AI is not speaking
+        if (callStatus === 'live' && !isAiSpeaking && recognitionRef.current === recognition) {
+          try {
+            recognition.start()
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+
+      recognitionRef.current = recognition
+      recognition.start()
+    } catch (err) {
+      console.warn('[speech-recognition] start error', err)
+      setIsUserListening(true)
+    }
+  }
+
+  // Start the interview call
+  const startCall = async () => {
     setCallStatus('connecting')
     setReport(null)
     setTranscript([])
+    setCurrentSpeechInput('')
+    setManualText('')
 
     try {
-      // Lazy-load the SDK so the rest of the dashboard doesn't ship it.
-      const { default: Vapi } = await import('@vapi-ai/web')
-      const vapi = new Vapi(publicKey)
-      vapiRef.current = vapi
+      // 1. Fetch initial opening question framed by Groq in chosen language
+      const res = await fetch('/api/interview/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interviewType,
+          country,
+          language: selectedLang.label,
+          profile: profileForApi,
+          messages: [],
+        }),
+      })
 
-      // Patch the SDK's internal fetch so the POST /call/web request goes
-      // through our own server-side proxy. This avoids browser-level blocks
-      // (ad blockers, extensions, network issues) on api.vapi.ai.
-      try {
-        // The SDK uses a shared singleton API client at @vapi-ai/web/dist/client
-        const clientModule = await import('@vapi-ai/web/dist/client')
-        const apiClient = (clientModule as any).client ?? (clientModule as any).default?.client
-        if (apiClient) {
-          const originalFetch = apiClient.customFetch?.bind(apiClient) ?? fetch
-          apiClient.customFetch = async (url: string, init: RequestInit) => {
-            if (typeof url === 'string' && url.includes('/call/web') && init?.method?.toUpperCase() === 'POST') {
-              console.log('[vapi] routing /call/web through server proxy')
-              return fetch('/api/interview/vapi-proxy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: init.body,
-              })
-            }
-            return originalFetch(url, init)
-          }
-        }
-      } catch (patchErr) {
-        console.warn('[vapi] Could not patch fetch — will use direct SDK calls', patchErr)
+      const data = await res.json()
+      if (!res.ok) {
+        const errMsg = typeof data?.error === 'string' ? data.error : 'Could not initialize interviewer'
+        throw new Error(errMsg)
       }
 
+      const questionText = data.text || 'Welcome to your interview. Let us begin.'
+      const firstLine: TranscriptLine = { role: 'assistant', text: questionText, ts: Date.now() }
 
-      // Wire events. The SDK emits 'message' for transcript fragments,
-      // 'call-start'/'call-end' for lifecycle, 'error' on anything bad.
-      vapi.on('call-start', () => {
-        setCallStatus('live')
-        callStartRef.current = Date.now()
-      })
-      vapi.on('call-end', () => {
-        setCallStatus('ended')
-      })
-      vapi.on('error', (e: any) => {
-        console.error('[vapi] error', e)
-        console.error('[vapi] error details:', JSON.stringify(e, Object.getOwnPropertyNames(e || {})))
-        const msg =
-          e?.errorMsg || e?.message || e?.error?.message || (typeof e === 'string' ? e : 'Voice call failed')
-        toast.error(msg)
-        setCallStatus('idle')
-      })
-      // SDK v2.5+ emits this when the call fails to start
-      vapi.on('call-start-failed' as any, (event: any) => {
-        console.error('[vapi] call-start-failed', JSON.stringify(event))
-        toast.error(event?.reason || event?.message || 'Call failed to start')
-        setCallStatus('idle')
-      })
-      vapi.on('message', (msg: any) => {
-        if (msg?.type === 'transcript' && msg?.transcript) {
-          // We only commit "final" transcripts so the UI doesn't churn on
-          // every partial. 'role' is "assistant" or "user".
-          if (msg.transcriptType === 'final') {
-            setTranscript((prev) => [
-              ...prev,
-              { role: msg.role === 'assistant' ? 'assistant' : 'user', text: msg.transcript, ts: Date.now() },
-            ])
-          }
-        }
-      })
+      setTranscript([firstLine])
+      setCallStatus('live')
 
-      // Start the call against the prebuilt assistant. We pass profile
-      // values via Vapi's `assistantOverrides.variableValues` so the
-      // system prompt's {{studentName}}, {{program}}, etc. are filled in.
-      const call = await vapi.start(assistantId, {
-        variableValues: {
-          studentName: profile.name || 'the candidate',
-          university: profileForApi.target_university || `a ${country} university`,
-          program: profile.targetField || profile.targetDegree || 'a graduate program',
-          startDate: profile.intakeTarget || 'the upcoming intake',
-          fundingSource: profile.fundingSource || 'self-funded with family support',
-          country,
-        },
-      })
-      console.log('[vapi] call started', call)
+      // 2. Pronounce question with ElevenLabs TTS
+      await speakText(questionText)
     } catch (e: any) {
-      console.error('[vapi] start failed', e)
-      console.error('[vapi] start failed details:', JSON.stringify(e, Object.getOwnPropertyNames(e || {})))
-      toast.error(e?.message || 'Could not start the voice interview')
+      console.error('[interview] start failed', e)
+      const msg = typeof e?.message === 'string' ? e.message : 'Could not start interview'
+      toast.error(msg)
       setCallStatus('idle')
+      stopAudioAndRecognition()
+    }
+  }
+
+  // Submit student's spoken/written answer and get next question from Groq
+  const handleAnswerSubmit = async (customAnswer?: string) => {
+    const answer = (customAnswer !== undefined ? customAnswer : currentSpeechInput || manualText).trim()
+    if (!answer) {
+      toast.error('Please speak or type your answer before proceeding.')
+      return
+    }
+
+    stopAudioAndRecognition()
+    setCurrentSpeechInput('')
+    setManualText('')
+
+    const updatedTranscript: TranscriptLine[] = [
+      ...transcriptRef.current,
+      { role: 'user', text: answer, ts: Date.now() },
+    ]
+    setTranscript(updatedTranscript)
+
+    try {
+      // Call Groq to evaluate and frame next question
+      const res = await fetch('/api/interview/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interviewType,
+          country,
+          language: selectedLang.label,
+          profile: profileForApi,
+          messages: updatedTranscript,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || 'Could not fetch next question')
+      }
+
+      const nextQuestion = data.text
+      setTranscript([...updatedTranscript, { role: 'assistant', text: nextQuestion, ts: Date.now() }])
+
+      // If AI flagged interview as finished, proceed to end call
+      if (data.isFinished) {
+        toast.success('Interview concluded! Generating your score report...')
+        await speakText(nextQuestion)
+        setTimeout(() => endCall(), 4000)
+      } else {
+        await speakText(nextQuestion)
+      }
+    } catch (e: any) {
+      toast.error(typeof e?.message === 'string' ? e.message : 'Could not process answer')
+      startSpeechListening()
     }
   }
 
   const toggleMute = () => {
-    if (!vapiRef.current) return
     const next = !muted
-    try {
-      vapiRef.current.setMuted(next)
-      setMuted(next)
-    } catch {
-      /* ignore */
+    setMuted(next)
+    if (next) {
+      stopAudioAndRecognition()
+    } else {
+      startSpeechListening()
     }
   }
 
   const endCall = async () => {
     setCallStatus('ending')
-    try {
-      vapiRef.current?.stop()
-    } catch {
-      /* ignore */
-    }
+    stopAudioAndRecognition()
+    setCallStatus('ended')
   }
 
   const restart = () => {
-    try {
-      vapiRef.current?.stop()
-    } catch {
-      /* ignore */
-    }
-    vapiRef.current = null
+    stopAudioAndRecognition()
     setCallStatus('idle')
     setTranscript([])
     setReport(null)
     setMuted(false)
     setElapsed(0)
+    setCurrentSpeechInput('')
+    setManualText('')
   }
 
-  // After the call ends, if we have any user lines, score the transcript.
+  // After the call ends, score the transcript
   useEffect(() => {
     if (callStatus !== 'ended') return
     if (report) return
@@ -283,7 +446,6 @@ export default function InterviewPrep() {
     setScoring(true)
     ;(async () => {
       try {
-        // Pair each assistant question with the user's reply that follows.
         const qa: { q: string; a: string }[] = []
         let pendingQ = ''
         for (const line of transcript) {
@@ -310,7 +472,7 @@ export default function InterviewPrep() {
         if (cancelled) return
         if (d?.report) setReport(d.report as InterviewReport)
       } catch (e: any) {
-        if (!cancelled) toast.error(e?.message || 'Could not score the interview')
+        if (!cancelled) toast.error(typeof e?.message === 'string' ? e.message : 'Could not score interview')
       } finally {
         if (!cancelled) setScoring(false)
       }
@@ -347,18 +509,18 @@ export default function InterviewPrep() {
         />
         <div className="relative p-6 sm:p-8">
           <div className="text-[11px] uppercase tracking-widest font-bold" style={{ color: '#fcd34d' }}>
-            Interview Prep
+            Multilingual Voice Interview Prep
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold mt-1">
-            Practice with a real-time AI interviewer.
+            Real-time voice interview powered by Groq & ElevenLabs.
           </h1>
           <p className="text-sm mt-2 opacity-90 max-w-2xl">
-            Pick a track — visa or university — and hop into a live voice room. We score the
-            conversation when you hang up and hand you a professional report you can save as
-            HTML or print to PDF.
+            Questions framed dynamically by Groq, pronounced by ElevenLabs with natural human intonation in any language.
+            Speak your answers, get scored across a comprehensive rubric, and download a professional PDF/HTML report.
           </p>
 
           <div className="flex flex-wrap items-center gap-3 mt-5">
+            {/* Track Switcher */}
             <div
               className="inline-flex p-1 rounded-2xl"
               style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}
@@ -383,6 +545,7 @@ export default function InterviewPrep() {
               ))}
             </div>
 
+            {/* Country Selector */}
             <select
               value={country}
               onChange={(e) => {
@@ -403,6 +566,32 @@ export default function InterviewPrep() {
                 </option>
               ))}
             </select>
+
+            {/* Multilingual Voice Language Picker */}
+            <div className="flex items-center gap-2">
+              <Languages className="w-4 h-4 text-amber-400" />
+              <select
+                value={selectedLang.code}
+                onChange={(e) => {
+                  const found = SUPPORTED_LANGUAGES.find((l) => l.code === e.target.value)
+                  if (found) setSelectedLang(found)
+                  if (callStatus !== 'idle') restart()
+                }}
+                disabled={callStatus !== 'idle'}
+                className="rounded-xl px-3 py-2 text-sm font-semibold disabled:opacity-50"
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  color: '#f8fafc',
+                }}
+              >
+                {SUPPORTED_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code} style={{ color: '#0f172a' }}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </motion.div>
@@ -466,23 +655,18 @@ export default function InterviewPrep() {
         {callStatus === 'idle' && !report && (
           <motion.div key="setup" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
             <Card
-              title={interviewType === 'visa' ? `${country} F-1 visa mock interview` : `${country} university mock interview`}
+              title={interviewType === 'visa' ? `${country} F-1 visa mock interview (${selectedLang.label})` : `${country} university mock interview (${selectedLang.label})`}
               icon={interviewType === 'visa' ? ShieldCheck : GraduationCap}
             >
               <p className="text-sm mb-4" style={{ color: 'var(--foreground-secondary)' }}>
-                Click <span className="font-semibold">Start interview</span> and we'll connect
-                you to <span className="font-semibold">Arjuna</span>, our AI interviewer. The
-                conversation is over voice — speak as you would to a real consular officer or
-                admissions panel.
-                {interviewType === 'visa'
-                  ? ' Be specific about your funding, ties to India, and post-study plans.'
-                  : ' Be specific about your motivation, projects, and fit with the program.'}
+                Click <span className="font-semibold">Start interview</span> and Arjuna will begin your interview in <span className="font-semibold text-amber-500">{selectedLang.label}</span>.
+                Groq frames every question dynamically, ElevenLabs pronounces it with natural voice cadence, and your responses are evaluated against visa and admissions standards.
               </p>
               <ul className="text-xs grid grid-cols-1 sm:grid-cols-3 gap-2 mb-5">
                 {[
-                  ['Mic access', 'Allow microphone when prompted.'],
-                  ['Quiet room', 'Background noise hurts transcription.'],
-                  ['Speak naturally', 'Long, specific answers score higher.'],
+                  ['Language: ' + selectedLang.label, 'Arjuna will speak and understand ' + selectedLang.label + '.'],
+                  ['Mic or Keyboard', 'Speak naturally, or type in the box if in a quiet room.'],
+                  ['Comprehensive Report', 'Graded across clarity, confidence, relevance, and intent.'],
                 ].map(([h, b]) => (
                   <li
                     key={h}
@@ -498,7 +682,7 @@ export default function InterviewPrep() {
               </ul>
               <button onClick={startCall} className="btn-primary inline-flex items-center gap-2">
                 <PhoneCall className="w-4 h-4" />
-                Start interview
+                Start {selectedLang.label} interview
               </button>
             </Card>
           </motion.div>
@@ -517,49 +701,66 @@ export default function InterviewPrep() {
                   {callStatus === 'connecting'
                     ? '● Connecting'
                     : callStatus === 'live'
-                    ? `● Live · ${fmtElapsed}`
+                    ? `● Live (${selectedLang.label}) · ${fmtElapsed}`
                     : '● Ending'}
                 </span>
               }
             >
               {/* Caller card */}
               <div
-                className="rounded-2xl p-6 flex flex-col items-center text-center mb-4"
+                className="rounded-2xl p-6 flex flex-col items-center text-center mb-4 relative overflow-hidden"
                 style={{ background: '#0f172a', color: '#f8fafc' }}
               >
                 <div className="relative mb-3">
                   <motion.div
                     animate={{
-                      scale: callStatus === 'live' ? [1, 1.08, 1] : 1,
-                      opacity: callStatus === 'live' ? [0.7, 1, 0.7] : 0.85,
+                      scale: isAiSpeaking ? [1, 1.15, 1] : [1, 1.04, 1],
+                      opacity: isAiSpeaking ? [0.8, 1, 0.8] : 0.8,
                     }}
-                    transition={{ repeat: Infinity, duration: 1.4 }}
+                    transition={{ repeat: Infinity, duration: isAiSpeaking ? 0.8 : 2 }}
                     className="w-24 h-24 rounded-full flex items-center justify-center"
                     style={{
-                      background:
-                        callStatus === 'live'
-                          ? 'radial-gradient(circle, #f59e0b 0%, rgba(245,158,11,0.0) 70%)'
-                          : 'rgba(245,158,11,0.18)',
+                      background: isAiSpeaking
+                        ? 'radial-gradient(circle, #f59e0b 0%, rgba(245,158,11,0.0) 70%)'
+                        : 'rgba(245,158,11,0.18)',
                     }}
                   >
                     <div
-                      className="w-16 h-16 rounded-full flex items-center justify-center text-3xl font-bold"
+                      className="w-16 h-16 rounded-full flex items-center justify-center text-3xl font-bold shadow-lg"
                       style={{ background: '#f59e0b', color: '#0f172a' }}
                     >
                       A
                     </div>
                   </motion.div>
                 </div>
+
                 <div className="font-bold text-lg">Arjuna</div>
                 <div className="text-xs opacity-75">
-                  AI {interviewType === 'visa' ? 'Visa Officer' : 'Admissions Interviewer'} · {country}
+                  AI {interviewType === 'visa' ? 'Visa Officer' : 'Admissions Interviewer'} · {country} ({selectedLang.label})
                 </div>
 
+                {/* Status Indicator */}
+                <div className="mt-2 text-xs font-semibold flex items-center gap-1.5" style={{ color: isAiSpeaking ? '#f59e0b' : '#10b981' }}>
+                  {isAiSpeaking ? (
+                    <>
+                      <Volume2 className="w-3.5 h-3.5 animate-pulse" />
+                      Arjuna is speaking…
+                    </>
+                  ) : isUserListening ? (
+                    <>
+                      <Mic className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                      Listening to you…
+                    </>
+                  ) : (
+                    'Waiting for response…'
+                  )}
+                </div>
+
+                {/* Controls */}
                 <div className="flex items-center gap-3 mt-5">
                   <button
                     onClick={toggleMute}
-                    disabled={callStatus !== 'live'}
-                    className="w-12 h-12 rounded-full flex items-center justify-center disabled:opacity-50"
+                    className="w-12 h-12 rounded-full flex items-center justify-center transition-all"
                     style={{
                       background: muted ? '#dc2626' : 'rgba(255,255,255,0.10)',
                       color: '#f8fafc',
@@ -571,7 +772,7 @@ export default function InterviewPrep() {
                   </button>
                   <button
                     onClick={endCall}
-                    className="px-4 h-12 rounded-full flex items-center gap-2 font-semibold"
+                    className="px-5 h-12 rounded-full flex items-center gap-2 font-semibold shadow-lg hover:brightness-110 transition-all"
                     style={{ background: '#dc2626', color: '#f8fafc' }}
                   >
                     <PhoneOff className="w-4 h-4" /> End interview
@@ -579,9 +780,54 @@ export default function InterviewPrep() {
                 </div>
               </div>
 
+              {/* Student Response Bar (Live speech + manual input fallback) */}
+              <div
+                className="rounded-2xl p-4 mb-4 border transition-all"
+                style={{
+                  background: 'var(--surface)',
+                  borderColor: isUserListening ? '#10b981' : 'var(--border)',
+                }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-foreground-secondary flex items-center gap-1.5">
+                    <Mic className={`w-3.5 h-3.5 ${isUserListening ? 'text-emerald-500 animate-pulse' : 'text-foreground-muted'}`} />
+                    Your Answer ({selectedLang.label}):
+                  </span>
+                  {currentSpeechInput && (
+                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      Speech detected
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={currentSpeechInput || manualText}
+                    onChange={(e) => {
+                      setCurrentSpeechInput('')
+                      setManualText(e.target.value)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleAnswerSubmit()
+                    }}
+                    placeholder={isAiSpeaking ? 'Arjuna is speaking…' : `Speak into mic or type your answer in ${selectedLang.label}…`}
+                    className="input-field flex-1 text-sm"
+                    disabled={isAiSpeaking}
+                  />
+                  <button
+                    onClick={() => handleAnswerSubmit()}
+                    disabled={isAiSpeaking || (!currentSpeechInput && !manualText)}
+                    className="btn-primary px-4 text-xs flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" /> Answer
+                  </button>
+                </div>
+              </div>
+
               {/* Live transcript */}
               <div
-                className="rounded-xl p-3 max-h-80 overflow-y-auto"
+                className="rounded-xl p-4 max-h-80 overflow-y-auto"
                 style={{ background: 'var(--background-secondary)', border: '1px solid var(--border)' }}
               >
                 {transcript.length === 0 ? (
@@ -591,11 +837,11 @@ export default function InterviewPrep() {
                       : 'Arjuna will start in a moment. Speak when you hear the question.'}
                   </div>
                 ) : (
-                  <ul className="space-y-2">
+                  <ul className="space-y-3">
                     {transcript.map((line, i) => (
                       <li key={i} className={`flex ${line.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         <div
-                          className="max-w-[80%] rounded-2xl px-3 py-2 text-sm"
+                          className="max-w-[85%] rounded-2xl px-4 py-2.5 text-sm shadow-sm"
                           style={{
                             background: line.role === 'user' ? '#f59e0b' : 'var(--surface)',
                             color: line.role === 'user' ? '#0f172a' : 'var(--foreground)',
@@ -801,7 +1047,7 @@ export default function InterviewPrep() {
                           <span className="font-bold" style={{ color: '#b45309' }}>
                             Suggested answer:
                           </span>{' '}
-                          {qa.improvedAnswer}
+                            {qa.improvedAnswer}
                         </div>
                       )}
                     </div>
