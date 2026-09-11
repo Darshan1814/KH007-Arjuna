@@ -1,28 +1,48 @@
 import React, { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import './index.css'
-import { Sparkles, Bot, GraduationCap, History, CheckCircle2, ChevronRight, Globe } from 'lucide-react'
+import {
+  Bot,
+  GraduationCap,
+  CheckCircle2,
+  Wand2,
+  Loader2,
+  AlertCircle,
+  Sparkles,
+} from 'lucide-react'
 
 function Popup() {
-  const [user, setUser] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
+  const [user, setUser] = useState<any>(null)
+  const [toggling, setToggling] = useState(false)
+  const [toggleError, setToggleError] = useState<string | null>(null)
 
   useEffect(() => {
-    chrome.storage.local.get(['authData', 'analysisHistory'], (result) => {
-      const authData = result.authData as any;
-      const analysisHistory = result.analysisHistory as any[];
-      if (authData && authData.user) {
-        setUser(authData.user);
+    chrome.storage.local.get(['authData'], (result) => {
+      const authData = result.authData as any
+      if (authData?.user) setUser(authData.user)
+    })
+  }, [])
+
+  const handleToggleOnPage = () => {
+    setToggling(true)
+    setToggleError(null)
+    chrome.runtime.sendMessage({ type: 'TOGGLE_ON_ACTIVE_TAB' }, (response) => {
+      setToggling(false)
+      if (chrome.runtime.lastError) {
+        setToggleError(chrome.runtime.lastError.message || 'Could not reach page')
+        return
       }
-      if (analysisHistory) {
-        setHistory(analysisHistory);
+      if (!response?.success) {
+        setToggleError(response?.error || 'Failed to toggle')
+        return
       }
-    });
-  }, []);
+      window.close()
+    })
+  }
 
   return (
     <div className="flex flex-col h-full bg-[#0b141a] text-gray-100 p-5 overflow-hidden">
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-5">
         <div className="p-2.5 bg-indigo-500/20 rounded-xl border border-indigo-500/20">
           <Bot className="w-6 h-6 text-indigo-400" />
         </div>
@@ -41,44 +61,35 @@ function Popup() {
           </p>
         </div>
       </div>
-      
-      {history.length > 0 ? (
-        <div className="flex-1 bg-[#202c33] rounded-2xl p-4 border border-white/5 flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2 mb-3 text-emerald-400">
-            <History className="w-4 h-4" />
-            <h2 className="text-sm font-semibold">Recent Universities</h2>
-          </div>
-          <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-1">
-            {history.map((item, i) => (
-              <button 
-                key={i}
-                onClick={() => chrome.tabs.create({ url: item.url })}
-                className="w-full text-left p-3 rounded-xl bg-[#111b21] hover:bg-white/5 transition-colors border border-white/5 flex items-center gap-3 group"
-              >
-                <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
-                  <Globe className="w-4 h-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-200 truncate">{item.title}</p>
-                  <p className="text-[10px] text-gray-500 truncate mt-0.5">{new URL(item.url).hostname}</p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-emerald-400 transition-colors" />
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="flex-1 bg-[#202c33] rounded-2xl p-5 border border-white/5 flex flex-col justify-center items-center text-center">
-          <Sparkles className="w-10 h-10 text-emerald-400 mb-4 animate-pulse" />
-          <h2 className="text-sm font-semibold mb-2">Ready to assist!</h2>
-          <p className="text-xs text-gray-400 leading-relaxed">
-            Open any university website to see the AI Copilot in action.
-          </p>
+
+      <button
+        onClick={handleToggleOnPage}
+        disabled={toggling}
+        className="mb-4 w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-medium py-3 px-4 rounded-xl transition-all shadow-lg shadow-emerald-500/20 flex justify-center items-center gap-2 text-sm border border-emerald-400/30 disabled:opacity-50"
+      >
+        {toggling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+        {toggling ? 'Loading…' : 'Open AI Copilot on this page'}
+      </button>
+
+      {toggleError && (
+        <div className="mb-3 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-[11px] flex items-start gap-2">
+          <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          <span>{toggleError}</span>
         </div>
       )}
 
+      <div className="flex-1 bg-[#202c33] rounded-2xl p-5 border border-white/5 flex flex-col justify-center items-center text-center">
+        <Sparkles className="w-9 h-9 text-emerald-400 mb-3 animate-pulse" />
+        <h2 className="text-sm font-semibold mb-2">Ready to assist!</h2>
+        <p className="text-xs text-gray-400 leading-relaxed">
+          Open any university or application page, then click the button
+          above. EduPilot reads the page and walks you through filling out
+          the form, step by step.
+        </p>
+      </div>
+
       <div className="mt-4">
-        <button 
+        <button
           onClick={() => chrome.tabs.create({ url: 'http://localhost:3000' })}
           className="w-full bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-medium py-3 px-4 rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex justify-center items-center gap-2 text-sm border border-indigo-400/30"
         >
@@ -92,5 +103,5 @@ function Popup() {
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <Popup />
-  </React.StrictMode>
+  </React.StrictMode>,
 )
