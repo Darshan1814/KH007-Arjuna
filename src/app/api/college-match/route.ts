@@ -1,16 +1,20 @@
-// College Match — server-side filter API (CSV-backed)
+// College Match — server-side filter API (CSV-backed, Gemini-aware)
+// ----------------------------------------------------------------------------
+// Reads the generated dataset from public/data/universities.csv, caches it in
+// module memory after the first hit, and returns a paged list of programs
+// bucketed into Guaranteed / Probable / Reach against the student's actual
+// scores.
 //
-// Reads the generated dataset from public/data/universities.csv using the
-// csv-parse library, caches it in module memory after the first hit, and
-// answers two kinds of requests:
-//   • "filter" — country / branch / degree / budget / bucket + CGPA-aware
-//                bucketing (Guaranteed / Probable / Reach) using this-year
-//                cutoffs vs the student's actual scores.
-//   • "ai-search" — Gemini converts a free-text query into structured
-//                   filters that are then fed back through the same filter
-//                   pipeline.
-// Every row served back to the client is a flat object with stable column
-// keys so the page can render proper table-style cards.
+// Key behaviour:
+//   • The exam-coverage gate is SOFT — programs that need an exam the
+//     student has not taken are still returned, but flagged as `Reach` and
+//     accompanied by a `missingExams` array so the UI can prompt the user
+//     to add the exam.
+//   • A free-text `aiQuery` is converted into structured filters by Gemini
+//     (gemini-2.5-flash, JSON schema response) and merged with the explicit
+//     filters from the client.
+//   • Every row served back to the client is a flat object with stable
+//     column keys so the page can render proper card grids.
 
 import { NextResponse } from 'next/server'
 import fs from 'node:fs'
@@ -21,9 +25,6 @@ import { GoogleGenAI, Type } from '@google/genai'
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock' })
 
 // ── CSV column shape used inside this route ──────────────────────────────────
-// We keep the full nested CSV columns from the generator. The columns are flat,
-// dotted strings like "exams_required.gre.minimum_total". Numeric / boolean
-// coercion happens once at load time so filtering stays fast.
 interface UniRow {
   id: string
   university_name: string
@@ -43,7 +44,6 @@ interface UniRow {
   language_of_instruction: string
   admission_category: string
 
-  // ── Exam cutoffs (only relevant ones used by the bucket logic) ─────────────
   gre_required: boolean
   gre_min: number
   gre_avg: number
@@ -165,16 +165,39 @@ interface FilterRequest {
   bucket?: 'Guaranteed' | 'Probable' | 'Reach' | 'all'
   page?: number
   pageSize?: number
-  // Optional: a free-text query that Gemini will translate into filters.
   aiQuery?: string
 }
 
-// Bucket a single row by comparing student's scores to the row's cutoffs.
-function bucketRow(row: UniRow, scores: Record<string, number>): { bucket: 'Guaranteed' | 'Probable' | 'Reach' | 'Skip'; gap: number } {
-  let minHits = 0, avgHits = 0, total = 0
+// Identify which exams a row needs that the student has NOT taken yet.
+function missingExamsFor(row: UniRow, taken: Set<string>): string[] {
+  const missing: string[] = []
+  const needsEnglish = row.ielts_required || row.toefl_required
+  const hasEnglish =
+    taken.has('IELTS') || taken.has('TOEFL') || taken.has('PTE') || taken.has('DUOLINGO')
+  if (needsEnglish && !hasEnglish) missing.push('IELTS/TOEFL')
+  if (row.gre_required && !taken.has('GRE')) missing.push('GRE')
+  if (row.gmat_required && !taken.has('GMAT')) missing.push('GMAT')
+  if (row.gate_required && !taken.has('GATE')) missing.push('GATE')
+  if (row.cat_required && !taken.has('CAT')) missing.push('CAT')
+  return missing
+}
+
+// Bucket a row by comparing the student's scores to the row's cutoffs.
+// • Missing exams force the row into Reach.
+// • Otherwise: all-min + 60% avg → Guaranteed; ≥70% min → Probable; ≥1 min → Reach.
+function bucketRow(
+  row: UniRow,
+  scores: Record<string, number>,
+  missing: string[],
+): { bucket: 'Guaranteed' | 'Probable' | 'Reach'; gap: number } {
+  if (missing.length > 0) return { bucket: 'Reach', gap: missing.length * 5 }
+
+  let minHits = 0
+  let avgHits = 0
+  let total = 0
   let totalGap = 0
 
-  if (scores.CGPA !== undefined) {
+  if (scores.CGPA !== undefined && row.cgpa_min > 0) {
     total++
     if (scores.CGPA >= row.cgpa_min) minHits++
     if (scores.CGPA >= row.cgpa_avg) avgHits++
@@ -229,30 +252,13 @@ function bucketRow(row: UniRow, scores: Record<string, number>): { bucket: 'Guar
     }
   }
 
-  if (total === 0) return { bucket: 'Skip', gap: 0 }
-  if (minHits === total && avgHits >= Math.ceil(total * 0.6)) return { bucket: 'Guaranteed', gap: totalGap }
-  if (minHits >= Math.ceil(total * 0.7)) return { bucket: 'Probable', gap: totalGap }
-  if (minHits >= 1) return { bucket: 'Reach', gap: totalGap }
-  return { bucket: 'Skip', gap: totalGap }
-}
+  // No relevant cutoffs at all → call it Probable as a neutral default.
+  if (total === 0) return { bucket: 'Probable', gap: 0 }
 
-// Coverage check — only return programs where the student has appeared for
-// every required exam family (English-proficiency + standardized).
-function rowExamsCovered(row: UniRow, taken: Set<string>): boolean {
-  const requiresEnglish = row.ielts_required || row.toefl_required
-  if (requiresEnglish) {
-    const hasEnglish = taken.has('IELTS') || taken.has('TOEFL') || taken.has('PTE') || taken.has('DUOLINGO')
-    if (!hasEnglish) return false
-  }
-  const stdNeeded: { req: boolean; key: string }[] = [
-    { req: row.gre_required, key: 'GRE' },
-    { req: row.gmat_required, key: 'GMAT' },
-    { req: row.gate_required, key: 'GATE' },
-    { req: row.cat_required, key: 'CAT' },
-  ]
-  const needed = stdNeeded.filter((s) => s.req)
-  if (needed.length > 0 && !needed.some((s) => taken.has(s.key))) return false
-  return true
+  if (minHits === total && avgHits >= Math.ceil(total * 0.6))
+    return { bucket: 'Guaranteed', gap: totalGap }
+  if (minHits >= Math.ceil(total * 0.7)) return { bucket: 'Probable', gap: totalGap }
+  return { bucket: 'Reach', gap: totalGap }
 }
 
 // Ask Gemini to convert a free-text query into structured filter constraints.
@@ -260,7 +266,7 @@ async function aiQueryToFilters(q: string): Promise<Partial<FilterRequest>> {
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'mock') return {}
   try {
     const resp = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
       contents: `Convert this free-text college search into structured database filters. Return ONLY the fields explicitly stated or strongly implied — leave others as empty arrays.
 
 Allowed countries (use exact spelling): USA, UK, Canada, Australia, Germany, Singapore, Ireland, Netherlands, France, Sweden, Switzerland, "New Zealand", Japan, "South Korea", India, Italy, Spain, "Hong Kong", China, UAE, Denmark, Finland, Norway, Belgium, Austria.
@@ -272,15 +278,16 @@ Allowed buckets: Guaranteed, Probable, Reach, all.
 BUDGET RULES:
 - "₹50L", "50L", "50 lakhs", "50 lakh" => budgetINR = 5000000
 - "1Cr", "1 crore", "₹1Cr" => budgetINR = 10000000
+- "under <X> lakhs" => budgetINR = X * 100000
 - Always express budget in INR as an integer.
 
 BUCKET CUES:
 - "safe", "safer matches", "guaranteed" => bucket="Guaranteed"
-- "stretch", "reach", "ambitious dream" => bucket="Reach"
+- "stretch", "reach", "ambitious", "dream" => bucket="Reach"
 - "realistic", "probable", "match" => bucket="Probable"
 
 EXAMPLE 1
-Query: "MS in AI in Canada under ₹50L only safer matches"
+Query: "MS in AI in Canada under 50L only safer matches"
 Output: {"countries":["Canada"],"categories":["Technology"],"degrees":["MS"],"budgetINR":5000000,"bucket":"Guaranteed"}
 
 EXAMPLE 2
@@ -310,13 +317,16 @@ Return strict JSON.`,
       },
     })
     const parsed = JSON.parse(resp.text || '{}')
-    // Strip empty arrays / 0s so the merge logic stays clean.
     const cleaned: Partial<FilterRequest> = {}
     if (Array.isArray(parsed.countries) && parsed.countries.length) cleaned.countries = parsed.countries
     if (Array.isArray(parsed.categories) && parsed.categories.length) cleaned.categories = parsed.categories
     if (Array.isArray(parsed.degrees) && parsed.degrees.length) cleaned.degrees = parsed.degrees
     if (typeof parsed.budgetINR === 'number' && parsed.budgetINR > 0) cleaned.budgetINR = parsed.budgetINR
-    if (typeof parsed.bucket === 'string' && ['Guaranteed', 'Probable', 'Reach', 'all'].includes(parsed.bucket)) cleaned.bucket = parsed.bucket as any
+    if (
+      typeof parsed.bucket === 'string' &&
+      ['Guaranteed', 'Probable', 'Reach', 'all'].includes(parsed.bucket)
+    )
+      cleaned.bucket = parsed.bucket as any
     return cleaned
   } catch (err) {
     console.warn('college-match aiQueryToFilters failed:', (err as Error)?.message)
@@ -329,8 +339,6 @@ export async function POST(request: Request) {
     const body = (await request.json()) as FilterRequest
     const data = loadData()
 
-    // If a free-text query is provided, expand it into structured filters
-    // and merge with whatever the client already passed.
     let aiFilters: Partial<FilterRequest> = {}
     if (body.aiQuery && body.aiQuery.trim().length > 0) {
       aiFilters = await aiQueryToFilters(body.aiQuery)
@@ -338,35 +346,41 @@ export async function POST(request: Request) {
 
     const taken = new Set(body.studentExams || [])
     const scores = body.studentScores || {}
-    const wantCountries = new Set([...(body.countries || []), ...((aiFilters.countries || []))])
-    const wantCategories = new Set([...(body.categories || []), ...((aiFilters.categories || []))])
-    const wantDegrees = new Set([...(body.degrees || []), ...((aiFilters.degrees || []))])
+    const wantCountries = new Set([
+      ...(body.countries || []),
+      ...(aiFilters.countries || []),
+    ])
+    const wantCategories = new Set([
+      ...(body.categories || []),
+      ...(aiFilters.categories || []),
+    ])
+    const wantDegrees = new Set([
+      ...(body.degrees || []),
+      ...(aiFilters.degrees || []),
+    ])
     const wantBucket = (aiFilters.bucket as any) || body.bucket || 'all'
     const budget = aiFilters.budgetINR || body.budgetINR || Infinity
     const page = Math.max(1, body.page || 1)
     const pageSize = Math.min(100, body.pageSize || 30)
 
-    // Pass 1 — exam-gate: which countries can the student even apply to?
-    const eligibleByCountry: Record<string, number> = {}
+    // Country counts across the WHOLE dataset (no exam gating).
+    const countryCounts: Record<string, number> = {}
     for (const row of data) {
-      if (!rowExamsCovered(row, taken)) continue
-      eligibleByCountry[row.country] = (eligibleByCountry[row.country] || 0) + 1
+      countryCounts[row.country] = (countryCounts[row.country] || 0) + 1
     }
 
-    // Pass 2 — full filter + bucket
+    // Filter + bucket
     const matched: any[] = []
     for (const row of data) {
-      if (!rowExamsCovered(row, taken)) continue
       if (wantCountries.size > 0 && !wantCountries.has(row.country)) continue
       if (wantCategories.size > 0 && !wantCategories.has(row.course_category)) continue
       if (wantDegrees.size > 0 && !wantDegrees.has(row.degree_type)) continue
-      if (row.total_cost_inr > budget) continue
+      if (row.total_cost_inr > 0 && row.total_cost_inr > budget) continue
 
-      const { bucket, gap } = bucketRow(row, scores)
-      if (bucket === 'Skip') continue
+      const missing = missingExamsFor(row, taken)
+      const { bucket, gap } = bucketRow(row, scores, missing)
       if (wantBucket !== 'all' && bucket !== wantBucket) continue
 
-      // Flat shape for clean column-style rendering on the client.
       matched.push({
         id: row.id,
         university_name: row.university_name,
@@ -383,22 +397,28 @@ export async function POST(request: Request) {
         degree_type: row.degree_type,
         duration_years: row.duration_years,
         admission_category: row.admission_category,
-        bucket, gap,
+        bucket,
+        gap,
+        missingExams: missing,
 
-        // Score requirements (only the ones that matter for this row)
-        gre_required: row.gre_required, gre_min: row.gre_min,
-        gmat_required: row.gmat_required, gmat_min: row.gmat_min,
-        ielts_required: row.ielts_required, ielts_min: row.ielts_min,
-        toefl_required: row.toefl_required, toefl_min: row.toefl_min,
-        gate_required: row.gate_required, gate_min: row.gate_min,
-        cat_required: row.cat_required, cat_min_pct: row.cat_min_pct,
-        cgpa_min: row.cgpa_min, cgpa_avg: row.cgpa_avg,
+        gre_required: row.gre_required,
+        gre_min: row.gre_min,
+        gmat_required: row.gmat_required,
+        gmat_min: row.gmat_min,
+        ielts_required: row.ielts_required,
+        ielts_min: row.ielts_min,
+        toefl_required: row.toefl_required,
+        toefl_min: row.toefl_min,
+        gate_required: row.gate_required,
+        gate_min: row.gate_min,
+        cat_required: row.cat_required,
+        cat_min_pct: row.cat_min_pct,
+        cgpa_min: row.cgpa_min,
+        cgpa_avg: row.cgpa_avg,
 
-        // Cutoff trend
         this_year_cutoff_cgpa: row.this_year_cutoff_cgpa,
         last_year_cutoff_cgpa: row.last_year_cutoff_cgpa,
 
-        // Stats / financials / outcomes
         acceptance_pct: row.acceptance_pct,
         total_cost_inr: row.total_cost_inr,
         avg_salary_inr: row.avg_salary_inr,
@@ -417,7 +437,10 @@ export async function POST(request: Request) {
       return (a.qs_ranking_2025 || 999) - (b.qs_ranking_2025 || 999)
     })
 
-    const bucketCounts = matched.reduce((acc, m) => { acc[m.bucket] = (acc[m.bucket] || 0) + 1; return acc }, {} as Record<string, number>)
+    const bucketCounts = matched.reduce((acc, m) => {
+      acc[m.bucket] = (acc[m.bucket] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
 
     const totalMatched = matched.length
     const start = (page - 1) * pageSize
@@ -425,9 +448,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       total: totalMatched,
-      page, pageSize,
+      page,
+      pageSize,
       bucketCounts,
-      eligibleByCountry,
+      countryCounts,
       datasetSize: data.length,
       aiFiltersApplied: aiFilters,
       results: slice,

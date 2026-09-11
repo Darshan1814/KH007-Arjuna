@@ -54,7 +54,6 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
     items: [
       { icon: LayoutDashboard, label: 'Dashboard', page: 'dashboard' },
       { icon: Puzzle, label: 'Extension', page: 'extension' },
-      { icon: User, label: 'Profile', page: 'profile' },
       { icon: ClipboardList, label: 'Form Guide', page: 'form-guide' },
     ]
   },
@@ -242,19 +241,6 @@ export default function DashboardLayout() {
           </button>
         </div>
 
-        {/* Profile mini */}
-        <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold"
-              style={{ background: 'var(--gradient-primary)', color: 'white' }}>
-              {profile.name ? profile.name[0].toUpperCase() : '?'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold truncate" style={{ color: 'var(--foreground)' }}>{profile.name || 'Student'}</div>
-            </div>
-          </div>
-        </div>
-
         {/* Nav items */}
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {visibleNavSections.map(section => (
@@ -286,6 +272,23 @@ export default function DashboardLayout() {
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <NotificationsDropdown />
+            <button onClick={() => setCurrentPage('profile')} title={profile.name ? `${profile.name} — Profile` : 'Profile'}
+              className="h-10 rounded-xl flex items-center gap-2 pl-1.5 pr-3 transition-all"
+              style={{
+                background: currentPage === 'profile' ? 'var(--primary-light)' : 'var(--surface)',
+                border: '1px solid var(--border)',
+                color: currentPage === 'profile' ? 'white' : 'var(--foreground)'
+              }}>
+              <span
+                className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                style={{ background: 'var(--gradient-primary)', color: 'white' }}
+              >
+                {profile.name ? profile.name[0].toUpperCase() : <User className="w-4 h-4" />}
+              </span>
+              <span className="hidden sm:inline text-sm font-semibold truncate max-w-[120px]">
+                {profile.name || 'Profile'}
+              </span>
+            </button>
             <button onClick={toggleTheme} className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
               style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
               {theme === 'dark' ? <Sun className="w-5 h-5" style={{ color: 'var(--accent)' }} /> : <Moon className="w-5 h-5" style={{ color: 'var(--primary)' }} />}
