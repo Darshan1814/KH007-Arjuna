@@ -32,12 +32,31 @@ export default function ExpertChat() {
   const [webRTCSignal, setWebRTCSignal] = useState<any>(null)
   const channelRef = useRef<any>(null)
 
-  // Update own last_seen presence
+  // Heartbeat: write our last_seen every 30s while this page is mounted, plus
+  // on tab visibility changes so an idle expert still shows Online to the
+  // student. Without this, presence only refreshed on keystrokes.
   useEffect(() => {
-    if (profile?.id) {
-      supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', profile.id).then()
+    if (!profile?.id) return
+
+    const beat = () =>
+      supabase
+        .from('profiles')
+        .update({ last_seen: new Date().toISOString() })
+        .eq('id', profile.id)
+        .then()
+
+    beat()
+    const interval = setInterval(beat, 30_000)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') beat()
     }
-  }, [profile?.id, inputText])
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [profile?.id])
 
   // Voice Note States
   const [isRecording, setIsRecording] = useState(false)
@@ -167,6 +186,48 @@ export default function ExpertChat() {
       supabase.removeChannel(channel)
     }
   }, [activeChatId])
+
+  // Realtime presence: subscribe to UPDATEs on the active student's profile
+  // row and re-render so the Online/Last seen label flips live for the expert.
+  const activeStudent = sessions.find((s) => s.id === activeChatId)?.student
+  const activeStudentId: string | undefined = activeStudent?.id
+
+  useEffect(() => {
+    if (!activeStudentId) return
+
+    const channel = supabase
+      .channel(`presence_${activeStudentId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${activeStudentId}` },
+        (payload) => {
+          const fresh = payload.new as any
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.student?.id === activeStudentId
+                ? {
+                    ...s,
+                    student: { ...s.student, last_seen: fresh.last_seen, status: fresh.status },
+                  }
+                : s,
+            ),
+          )
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [activeStudentId])
+
+  // Re-render the Online/Last seen text every minute so freshness doesn't
+  // go stale on a quiet chat.
+  const [, setPresenceTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setPresenceTick((n) => n + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   // Broadcast Call Signals via DB Inserts
   const sendSignal = async (signalData: any) => {
@@ -329,7 +390,12 @@ export default function ExpertChat() {
     return <div className="flex-1 flex items-center justify-center bg-[#0b141a]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
   }
 
-  const getPresenceText = (lastSeen: string | undefined) => {
+  const getPresenceText = (lastSeen: string | undefined, status?: string) => {
+    if (status === 'online') return 'Online'
+    if (status === 'offline') {
+      if (!lastSeen) return 'Offline'
+      return `Last seen ${new Date(lastSeen).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+    }
     if (!lastSeen) return 'Offline'
     const diff = Date.now() - new Date(lastSeen).getTime()
     if (diff < 5 * 60 * 1000) return 'Online'
@@ -355,7 +421,7 @@ export default function ExpertChat() {
           ) : sessions.map(chat => {
             const stu = chat.student || { name: 'Student' }
             const isActive = activeChatId === chat.id
-            const presence = getPresenceText(stu.last_seen)
+            const presence = getPresenceText(stu.last_seen, stu.status)
             
             return (
               <button key={chat.id} onClick={() => setActiveChatId(chat.id)}
@@ -386,9 +452,16 @@ export default function ExpertChat() {
               <img src={student.avatar_url || `https://ui-avatars.com/api/?name=${student.name}`} className="w-10 h-10 rounded-full border border-white/10" alt="" />
               <div>
                 <div className="font-semibold text-gray-100">{student.name || 'Student'}</div>
-                <div className={`text-xs font-medium ${getPresenceText(student.last_seen) === 'Online' ? 'text-emerald-500' : 'text-gray-400'}`}>
-                  {getPresenceText(student.last_seen)}
-                </div>
+                {(() => {
+                  const text = getPresenceText(student.last_seen, student.status)
+                  const online = text === 'Online'
+                  return (
+                    <div className={`text-xs font-medium flex items-center gap-1.5 ${online ? 'text-emerald-500' : 'text-gray-400'}`}>
+                      {online && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />}
+                      {text}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
             <div className="flex items-center gap-2">
