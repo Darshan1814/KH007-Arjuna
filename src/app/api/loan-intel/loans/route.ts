@@ -150,7 +150,8 @@ function hostOf(u: string): string {
 // ── Main route ───────────────────────────────────────────────────────────────
 export async function POST(request: Request) {
   try {
-    const { profileData, decisionState } = await request.json()
+    const { profileData, decisionState, userQuery } = await request.json()
+    const userQueryClean = typeof userQuery === 'string' ? userQuery.trim().slice(0, 200) : ''
 
     // Resolve every signal we can use to refine the loan search.
     const country = decisionState?.selectedCountry
@@ -185,6 +186,7 @@ export async function POST(request: Request) {
           model: 'gemini-2.0-flash',
           contents: `You plan Google searches for an Indian education-loan advisor. Given a student's profile, generate 6–8 high-precision Google search queries that will find REAL, STUDENT EDUCATION LOAN PRODUCTS that an Indian student can apply to in 2026. Goal is to land on official lender apply pages.
 
+${userQueryClean ? `THE STUDENT TYPED THIS REQUEST — anchor every query around it:\n  "${userQueryClean}"\n  Generate variations that combine this phrase with destination, lender names, "education loan", "apply", and "2026".\n` : ''}
 REQUIREMENTS for every query:
 - Must include "education loan" AND ("apply" OR "apply online" OR "interest rate")
 - Must include the year 2026
@@ -214,6 +216,8 @@ Return strict JSON: { "queries": string[] } with 6–8 queries.`,
     if (queries.length === 0) {
       const yr = '2026'
       queries = [
+        userQueryClean ? `${userQueryClean} education loan ${country} apply ${yr}` : '',
+        userQueryClean ? `${userQueryClean} education loan India apply online ${yr}` : '',
         `HDFC Credila education loan ${country} apply ${yr} interest rate`,
         `Avanse education loan ${country} apply online ${yr}`,
         `Auxilo education loan ${country} apply ${yr}`,
@@ -226,7 +230,11 @@ Return strict JSON: { "queries": string[] } with 6–8 queries.`,
           ? `Prodigy Finance MPower education loan ${country} Indian student apply ${yr}`
           : `IDFC FIRST Bank education loan India apply ${yr} interest rate`,
         university ? `education loan for ${university} Indian students ${yr} apply` : `Tata Capital education loan abroad apply ${yr}`,
-      ]
+      ].filter(Boolean) as string[]
+    } else if (userQueryClean) {
+      // Make sure the user's query is at the front of the list even when
+      // Gemini already proposed queries.
+      queries = [`${userQueryClean} education loan ${country} apply 2026`, ...queries]
     }
 
     // ── Step 2: run all queries in parallel via Serper ────────────────────────

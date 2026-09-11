@@ -123,7 +123,7 @@ export default function ExpertDirectory() {
           <input
             type="text"
             placeholder="Search by name or country..."
-            className="input-field pl-9"
+            className="input-field pl-10"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />

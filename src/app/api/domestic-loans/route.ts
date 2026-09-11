@@ -37,6 +37,21 @@ interface ProfileInput {
   familyIncome?: string
   coApplicant?: string
   collateral?: string
+  /** Free-form student profile signals — exam scores, target field, etc. */
+  studentName?: string
+  city?: string
+  state?: string
+  twelfthMarks?: string
+  cgpa?: string
+  jeeScore?: string
+  cetScore?: string
+  neetScore?: string
+  catScore?: string
+  gateScore?: string
+  targetField?: string
+  targetDegree?: string
+  /** Free-text the user typed in the search bar. */
+  userQuery?: string
 }
 
 interface SerperOrganic {
@@ -114,18 +129,35 @@ async function serperSearch(query: string, num = 8): Promise<SerperOrganic[]> {
 // Gemini crafts the Serper queries; deterministic fallback when unavailable.
 async function buildLoanQueries(college: CollegeInput, profile: ProfileInput): Promise<string[]> {
   const year = new Date().getFullYear()
-  const fallback = [
-    `${college.name} education loan options ${year}`,
-    `SBI Scholar education loan ${college.name} apply interest rate ${year}`,
-    `education loan for ${college.name} students ${year} apply`,
-    `${college.name} premier institute education loan list AA AB category`,
-    profile.collateral === 'No'
-      ? `collateral free education loan India ${year} apply ${college.name}`
-      : `secured education loan India ${year} interest rate apply`,
-    `Vidya Lakshmi education loan ${college.name} apply ${year}`,
-    `HDFC Credila Avanse education loan ${college.name} apply ${year}`,
-    `Bank of Baroda Vidya education loan ${year} apply interest rate`,
+  const collegeName = college.name || ''
+  const examChips = [
+    profile.jeeScore && `JEE ${profile.jeeScore}`,
+    profile.cetScore && `CET ${profile.cetScore}`,
+    profile.neetScore && `NEET ${profile.neetScore}`,
+    profile.catScore && `CAT ${profile.catScore}`,
+    profile.gateScore && `GATE ${profile.gateScore}`,
   ]
+    .filter(Boolean)
+    .join(', ')
+  const fallback = [
+    profile.userQuery
+      ? `${profile.userQuery} education loan India apply ${year}`
+      : '',
+    profile.userQuery && collegeName
+      ? `${profile.userQuery} ${collegeName} education loan ${year}`
+      : '',
+    collegeName ? `${collegeName} education loan options ${year}` : '',
+    collegeName ? `SBI Scholar education loan ${collegeName} apply interest rate ${year}` : '',
+    collegeName ? `education loan for ${collegeName} students ${year} apply` : '',
+    collegeName ? `${collegeName} premier institute education loan list AA AB category` : '',
+    profile.collateral === 'No'
+      ? `collateral free education loan India ${year} apply${collegeName ? ' ' + collegeName : ''}`
+      : `secured education loan India ${year} interest rate apply`,
+    `Vidya Lakshmi education loan India apply ${year}`,
+    `HDFC Credila Avanse education loan India apply ${year}`,
+    `Bank of Baroda Vidya education loan ${year} apply interest rate`,
+    `${profile.targetField || profile.targetDegree || 'engineering'} education loan India apply ${year}`,
+  ].filter(Boolean) as string[]
 
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'mock') {
     return fallback
@@ -135,10 +167,13 @@ async function buildLoanQueries(college: CollegeInput, profile: ProfileInput): P
     const where = [college.city, college.state].filter(Boolean).join(', ')
     const resp = await ai.models.generateContent({
       model: 'gemini-2.0-flash',
-      contents: `You plan Google searches for an Indian DOMESTIC education-loan advisor. Generate 6–8 high-precision queries to find REAL education-loan products an Indian student joining THIS college can apply to in ${year}, landing on official lender apply pages.
+      contents: `You plan Google searches for an Indian DOMESTIC education-loan advisor. Generate 6–8 high-precision queries to find REAL education-loan products an Indian student${collegeName ? ` joining "${collegeName}"` : ''} can apply to in ${year}, landing on official lender apply pages.
 
-College: "${college.name}"${where ? ` (${where})` : ''}${college.collegeType ? `, type ${college.collegeType}` : ''}
-Branch: "${college.branch || 'engineering/professional'}"
+${profile.userQuery ? `THE STUDENT TYPED THIS — anchor every query around it:\n  "${profile.userQuery}"\n` : ''}
+${collegeName ? `College: "${collegeName}"${where ? ` (${where})` : ''}${college.collegeType ? `, type ${college.collegeType}` : ''}` : ''}
+${college.branch ? `Branch: "${college.branch}"` : ''}
+${examChips ? `Student exam scores: ${examChips}` : ''}
+${profile.targetField ? `Target field: ${profile.targetField}` : ''}
 Family income: ${profile.familyIncome || 'NA'}
 Co-applicant: ${profile.coApplicant || 'NA'}
 Collateral: ${profile.collateral || 'NA'}
@@ -146,7 +181,7 @@ Collateral: ${profile.collateral || 'NA'}
 RULES for the queries:
 - Must be about STUDENT EDUCATION LOANS for studying IN INDIA (not abroad).
 - Must include "education loan" and the year ${year}.
-- At least 1 query must target any premier-institute / list-A scheme if "${college.name}" is an IIT/NIT/IIIT/AIIMS/top institute (e.g. "SBI Scholar loan ${college.name}").
+${collegeName ? `- At least 1 query must target any premier-institute / list-A scheme if "${collegeName}" is an IIT/NIT/IIIT/AIIMS/top institute (e.g. "SBI Scholar loan ${collegeName}").` : ''}
 - Spread across top Indian banks (SBI, Bank of Baroda, PNB, Canara, Union, ICICI, Axis), NBFCs (HDFC Credila, Avanse, Auxilo, InCred), and the govt Vidya Lakshmi portal / CSIS scheme.
 - ${profile.collateral === 'No' ? 'Include at least 2 collateral-free queries.' : 'Include at least 1 secured/collateral query.'}
 - No scholarships, no abroad loans, no blogs/news.
@@ -185,11 +220,22 @@ export async function POST(request: Request) {
       familyIncome: typeof body?.familyIncome === 'string' ? body.familyIncome : '',
       coApplicant: typeof body?.coApplicant === 'string' ? body.coApplicant : '',
       collateral: typeof body?.collateral === 'string' ? body.collateral : '',
+      studentName: body?.profile?.name,
+      city: body?.profile?.city,
+      state: body?.profile?.state,
+      twelfthMarks: body?.profile?.twelfthMarks,
+      cgpa: body?.profile?.undergrad_cgpa,
+      jeeScore: body?.profile?.jee_score,
+      cetScore: body?.profile?.cet_score,
+      neetScore: body?.profile?.neet_score,
+      catScore: body?.profile?.cat_score,
+      gateScore: body?.profile?.gate_score,
+      targetField: body?.profile?.target_field,
+      targetDegree: body?.profile?.target_degree,
+      userQuery: typeof body?.userQuery === 'string' ? body.userQuery.trim().slice(0, 200) : '',
     }
 
-    if (!college.name) {
-      return NextResponse.json({ error: 'College is required' }, { status: 400 })
-    }
+    // No more hard gate on college — the page now allows search-only flow too.
 
     // ── Step 1: Gemini crafts the Serper queries ───────────────────────────────
     const queries = await buildLoanQueries(college, profile)
@@ -228,9 +274,10 @@ export async function POST(request: Request) {
 
     const synthesis = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: `You are an Indian DOMESTIC education-loan advisor. From the LIVE search results below, pick the **6 most relevant, currently-active education-loan products** for a student joining "${college.name}"${where ? ` (${where})` : ''}${college.collegeType ? `, a ${college.collegeType}` : ''}, studying ${college.branch || 'their chosen branch'} IN INDIA. Return up to 6 options, each from a DIFFERENT lender.
+      contents: `You are an Indian DOMESTIC education-loan advisor. From the LIVE search results below, pick the **6 most relevant, currently-active education-loan products** for an Indian student${college.name ? ` joining "${college.name}"${where ? ` (${where})` : ''}${college.collegeType ? `, a ${college.collegeType}` : ''}` : ''}${college.branch ? `, studying ${college.branch}` : ''} IN INDIA. Return up to 6 options, each from a DIFFERENT lender.
 
-Student loan signals — family income: ${profile.familyIncome || 'NA'}, co-applicant: ${profile.coApplicant || 'NA'}, collateral: ${profile.collateral || 'NA'}.
+${profile.userQuery ? `STUDENT'S OWN QUERY: "${profile.userQuery}". Honour this when ranking the picks.` : ''}
+Student loan signals — family income: ${profile.familyIncome || 'NA'}, co-applicant: ${profile.coApplicant || 'NA'}, collateral: ${profile.collateral || 'NA'}.${profile.cgpa ? ` UG CGPA: ${profile.cgpa}.` : ''}${profile.jeeScore ? ` JEE: ${profile.jeeScore}.` : ''}${profile.cetScore ? ` CET: ${profile.cetScore}.` : ''}${profile.neetScore ? ` NEET: ${profile.neetScore}.` : ''}${profile.catScore ? ` CAT: ${profile.catScore}.` : ''}${profile.gateScore ? ` GATE: ${profile.gateScore}.` : ''}
 
 ABSOLUTE RULES (any violation = drop the option):
 - Every option MUST be a STUDENT EDUCATION LOAN product for studying in India. Never pick scholarships, grants, abroad-only loans, news, blogs, or guides.
@@ -238,7 +285,7 @@ ABSOLUTE RULES (any violation = drop the option):
 - Each option from a DIFFERENT lender (different hostname).
 - All amounts INR; realistic Indian rates (banks 8.5–11.5%, NBFCs 10.5–14%, govt schemes lower).
 - Set "collegeSpecific" true ONLY when the product is specifically tied to this institute (e.g. SBI Scholar loan list-A for IITs/NITs/IIITs) — otherwise false.
-- "fitReason" must reference the college "${college.name}" and a loan signal (income/co-applicant/collateral).
+- "fitReason" must reference ${college.name ? `the college "${college.name}" and ` : ''}a loan signal (income/co-applicant/collateral${profile.cgpa || profile.jeeScore || profile.cetScore ? '/exam score' : ''}).
 - Prefer premier-institute schemes if this college qualifies; include the Vidya Lakshmi / govt option when present.
 
 LIVE SERPER RESULTS:

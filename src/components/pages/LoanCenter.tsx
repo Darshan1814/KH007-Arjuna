@@ -59,6 +59,7 @@ export default function LoanCenter({ embedded = false }: { embedded?: boolean } 
   const [options, setOptions] = useState<LoanOption[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string>('')
+  const [searchTerm, setSearchTerm] = useState('')
 
   // Compute loan need from the new schema first, fall back to legacy.
   const budgetLakhs = parseBudgetToLakhs(profile.expectedBudgetStr) || profile.budgetLakhs || 0
@@ -66,7 +67,7 @@ export default function LoanCenter({ embedded = false }: { embedded?: boolean } 
   const loanNeededLakhs = Math.max(0, budgetLakhs - savingsLakhs)
   const cgpaDisplay = profile.undergradCgpa || (profile.cgpa ? String(profile.cgpa) : 'N/A')
 
-  const fetchOptions = useCallback(async () => {
+  const fetchOptions = useCallback(async (query?: string) => {
     setLoading(true)
     setErr('')
     try {
@@ -81,6 +82,7 @@ export default function LoanCenter({ embedded = false }: { embedded?: boolean } 
             cgpa: profile.cgpa || parseFloat(profile.undergradCgpa || '0'),
           },
           decisionState,
+          userQuery: (query ?? searchTerm).trim(),
         }),
       })
       const json = await res.json()
@@ -92,7 +94,7 @@ export default function LoanCenter({ embedded = false }: { embedded?: boolean } 
     } finally {
       setLoading(false)
     }
-  }, [profile, budgetLakhs, savingsLakhs])
+  }, [profile, budgetLakhs, savingsLakhs, searchTerm])
 
   useEffect(() => {
     fetchOptions()
@@ -119,14 +121,32 @@ export default function LoanCenter({ embedded = false }: { embedded?: boolean } 
               Live loan options matched to your profile — fetched in real time, ranked by fit.
             </p>
           </div>
-          <button
-            onClick={fetchOptions}
-            disabled={loading}
-            className="btn-secondary flex items-center gap-2 text-sm self-start"
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              fetchOptions(searchTerm)
+            }}
+            className="flex items-center gap-2 w-full sm:w-auto sm:max-w-xl"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-            Refresh Live Results
-          </button>
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--foreground-muted)' }} />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder='e.g. "no collateral loans for MS in Germany under ₹40L"'
+                className="input-field pl-10 text-sm"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-secondary flex items-center gap-2 text-sm whitespace-nowrap"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              {loading ? 'Searching…' : searchTerm.trim() ? 'Search' : 'Refresh'}
+            </button>
+          </form>
         </div>
       )}
 
@@ -175,7 +195,7 @@ export default function LoanCenter({ embedded = false }: { embedded?: boolean } 
       {!loading && err && (
         <div className="card text-center py-8">
           <p className="text-sm" style={{ color: 'var(--danger)' }}>{err}</p>
-          <button onClick={fetchOptions} className="btn-primary mt-4 text-sm">Retry</button>
+          <button onClick={() => fetchOptions()} className="btn-primary mt-4 text-sm">Retry</button>
         </div>
       )}
 
@@ -187,7 +207,7 @@ export default function LoanCenter({ embedded = false }: { embedded?: boolean } 
           <p className="text-xs mt-1" style={{ color: 'var(--foreground-muted)' }}>
             Complete your target country and budget in your profile, then refresh.
           </p>
-          <button onClick={fetchOptions} className="btn-primary mt-4 text-sm">Search Again</button>
+          <button onClick={() => fetchOptions()} className="btn-primary mt-4 text-sm">Search Again</button>
         </div>
       )}
 

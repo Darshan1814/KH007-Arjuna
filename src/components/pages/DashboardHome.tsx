@@ -1,366 +1,547 @@
 'use client'
 
-import { useMemo } from 'react'
-import { motion } from 'framer-motion'
+import { useEffect, useMemo, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
-import { universities } from '@/lib/mock-data'
-import { calculateDreamScore, getAdmissionProbability, formatINR, calculateEMI, parseBudgetToLakhs, parseNumber } from '@/lib/utils'
 import {
-  Target, TrendingUp, DollarSign, BookOpen, Shield,
-  MessageCircle, ChevronRight, Bell, AlertTriangle,
-  GraduationCap, Flame, Zap, ArrowUpRight, Trophy, Clock,
-  Search, FileText, UserCheck, Gift, Award, User, Briefcase, Globe, Wallet
+  Globe2,
+  MapPin,
+  Newspaper,
+  Award,
+  ExternalLink,
+  Loader2,
+  Target,
+  GraduationCap,
+  DollarSign,
+  BookOpen,
+  Wallet,
+  ArrowRight,
+  Sparkles,
+  Puzzle,
+  Calendar,
+  Users,
 } from 'lucide-react'
-import { calculateProfileCompleteness } from '@/lib/profileCompleteness'
+import { createClient } from '@/lib/supabase/client'
+import type { PageType } from '@/lib/types'
 
-const SnapshotCard = ({ title, icon: Icon, children }: any) => (
-  <div className="card p-4 flex flex-col gap-2 bg-surface/50 border border-border/50 hover:border-primary/30 transition-colors">
-    <div className="flex items-center gap-2 mb-1 text-primary-light">
-      <Icon className="w-4 h-4" />
-      <span className="font-semibold text-sm">{title}</span>
-    </div>
-    <div className="text-xs space-y-1 text-foreground-secondary">
-      {children}
-    </div>
-  </div>
-)
+type Track = 'abroad' | 'india'
+
+interface NewsItem {
+  title: string
+  link: string
+  snippet?: string
+  source?: string
+  date?: string
+}
+
+interface ScholarshipItem {
+  name: string
+  provider: string
+  summary?: string
+  fitReason?: string
+  interestOrAmount?: string
+  tenureOrDeadline?: string
+  applyUrl?: string
+  sourceUrl?: string
+}
+
+const TRACK_KEY = 'gradpilot:dashboard-track'
 
 export default function DashboardHome() {
-  const { profile, setCurrentPage, updateProfile, notifications } = useAppStore()
+  const { profile, user, setCurrentPage } = useAppStore()
+  const supabase = createClient()
 
-  const dreamScore = useMemo(() => calculateDreamScore(profile), [profile])
+  // ---- profile (live from supabase) ----
+  const [row, setRow] = useState<any | null>(null)
+  const [loadingRow, setLoadingRow] = useState(true)
 
-  // Update profile with calculated dream score
-  useMemo(() => {
-    if (dreamScore !== profile.dreamScore) {
-      updateProfile({ dreamScore })
+  useEffect(() => {
+    if (!user?.id) return
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      if (cancelled) return
+      setRow(data || null)
+      setLoadingRow(false)
+    })()
+    return () => {
+      cancelled = true
     }
-  }, [dreamScore, profile.dreamScore, updateProfile])
+  }, [user?.id])
 
-  // Parse financials from the new onboarding schema or fallback to legacy
-  const budgetLakhs = parseBudgetToLakhs(profile.expectedBudgetStr) || profile.budgetLakhs || 0
-  const totalBudgetINR = budgetLakhs * 100000
-  
-  // If user typed a loan estimate string, try to parse it, otherwise calculate based on budget
-  const userLoanEst = parseNumber(profile.loanEstimateStr, 0)
-  const savingsLakhs = parseNumber(profile.savingsLakhs, 5) // default 5L buffer
-  const loanNeededINR = userLoanEst > 0 ? userLoanEst : Math.max(0, totalBudgetINR - (savingsLakhs * 100000))
-  const monthlyEMI = loanNeededINR > 0 ? calculateEMI(loanNeededINR, 10.5, 10) : 0
+  // ---- track switcher (persisted) ----
+  const inferDefault = (): Track => {
+    const goal = (row?.study_goal || profile.studyGoal || '').toString().toLowerCase()
+    if (goal.includes('domestic') || goal.includes('india')) return 'india'
+    return 'abroad'
+  }
+  const [track, setTrack] = useState<Track>(() => {
+    if (typeof window === 'undefined') return 'abroad'
+    return (localStorage.getItem(TRACK_KEY) as Track) || 'abroad'
+  })
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem(TRACK_KEY, track)
+  }, [track])
+  // Once row arrives, gently default to whichever side matches the profile
+  // unless the user has already picked.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !row) return
+    if (!localStorage.getItem(TRACK_KEY)) setTrack(inferDefault())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row])
 
-  const topMatches = useMemo(() => {
-    return universities.slice(0, 6).map(u => ({
-      ...u,
-      admission: getAdmissionProbability(profile.undergradCgpa || profile.cgpa, profile.greScoreStr || profile.greScore, u.ranking),
-      tuitionINR: u.tuitionUSD * 83.5,
-      salaryINR: u.avgSalaryUSD * 83.5,
-    }))
-  }, [profile.undergradCgpa, profile.cgpa, profile.greScoreStr, profile.greScore])
+  const r = row || {}
+  const name = r.name || profile.name || 'Student'
+  const targetCountries: string[] = r.target_countries || profile.targetCountries || []
+  const targetState = r.state || profile.state || ''
+  const targetField = r.target_field || profile.targetField || ''
+  const targetDegree = r.target_degree || profile.targetDegree || ''
+  const intake = r.intake_target || profile.intakeTarget || ''
+  const cgpa = r.undergrad_cgpa || profile.undergradCgpa || ''
 
-  const nextBestAction = useMemo(() => {
-    const completeness = calculateProfileCompleteness(profile)
-    if (completeness < 70) return { text: 'Complete your profile to unlock loan rates', page: 'onboarding' as const, color: '#f59e0b' }
-    if (profile.journeyStage === 'EXPLORER') return { text: 'Find universities for your profile', page: 'admission-predictor' as const, color: '#6366f1' }
-    if (profile.journeyStage === 'RESEARCHER') return { text: 'Draft your SOP with AI Co-Pilot', page: 'sop-copilot' as const, color: '#ec4899' }
-    if (profile.journeyStage === 'APPLICANT') return { text: 'See live loan matches for your profile', page: 'loan-center' as const, color: '#10b981' }
-    if (profile.journeyStage === 'LOAN_SEEKER') return { text: 'Compare live loan options', page: 'loan-center' as const, color: '#8b5cf6' }
-    return { text: 'Prepare for your visa interview', page: 'visa-simulator' as const, color: '#8b5cf6' }
-  }, [profile])
+  // pull whatever exam scores are present (we have many flavours)
+  const examScores: { name: string; score: string }[] = [
+    { name: 'GRE', score: r.gre_score },
+    { name: 'GMAT', score: r.gmat_score },
+    { name: 'IELTS', score: r.ielts_score },
+    { name: 'TOEFL', score: r.toefl_score },
+    { name: 'GATE', score: r.gate_score },
+    { name: 'CAT', score: r.cat_score },
+    { name: 'JEE', score: r.jee_score },
+    { name: 'NEET', score: r.neet_score },
+    { name: 'CET', score: r.cet_score },
+  ].filter((e) => e.score && String(e.score).trim() !== '' && String(e.score) !== '0')
 
+  // ---- live news ----
+  const [news, setNews] = useState<NewsItem[]>([])
+  const [loadingNews, setLoadingNews] = useState(false)
 
-  const quickActions = [
-    { icon: Target, label: 'Find Universities', page: 'admission-predictor' as const, color: '#6366f1' },
-    { icon: TrendingUp, label: 'Calculate ROI', page: 'roi-calculator' as const, color: '#10b981' },
-    { icon: DollarSign, label: 'Check Loan', page: 'loan-center' as const, color: '#f59e0b' },
-    { icon: Award, label: 'Scholarships', page: 'scholarship-hunter' as const, color: '#fbbf24' },
-    { icon: BookOpen, label: 'Write SOP', page: 'sop-copilot' as const, color: '#ec4899' },
-    { icon: Shield, label: 'Visa Prep', page: 'visa-simulator' as const, color: '#8b5cf6' },
+  useEffect(() => {
+    if (loadingRow) return
+    let cancelled = false
+    setLoadingNews(true)
+    const q =
+      track === 'abroad'
+        ? `${targetCountries[0] || 'study abroad'} ${targetField || 'university'} admission scholarship Indian students 2026`
+        : `${targetState || 'India'} ${targetField || 'engineering'} college admission scholarship 2026 cutoff`
+    fetch('/api/news?q=' + encodeURIComponent(q))
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return
+        setNews(Array.isArray(d?.news) ? d.news.slice(0, 6) : [])
+      })
+      .catch(() => {
+        if (!cancelled) setNews([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingNews(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [track, loadingRow, targetCountries.join(','), targetField, targetState])
+
+  // ---- scholarships ----
+  const [scholarships, setScholarships] = useState<ScholarshipItem[]>([])
+  const [loadingScholarships, setLoadingScholarships] = useState(false)
+
+  useEffect(() => {
+    if (loadingRow) return
+    let cancelled = false
+    setLoadingScholarships(true)
+    fetch('/api/ai-journey/loan-options', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'scholarship',
+        profileData: {
+          undergrad_cgpa: cgpa,
+          target_field: targetField,
+          target_countries: targetCountries,
+          state: targetState,
+          target_degree: targetDegree,
+        },
+        decisionState: {
+          selectedCountry: track === 'india' ? 'India' : targetCountries[0] || '',
+        },
+      }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return
+        setScholarships(Array.isArray(d?.options) ? d.options.slice(0, 3) : [])
+      })
+      .catch(() => {
+        if (!cancelled) setScholarships([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingScholarships(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [track, loadingRow, targetCountries.join(','), targetField, targetState])
+
+  const goAbroadActions: { label: string; icon: any; page: PageType }[] = [
+    { label: 'Find universities', icon: Target, page: 'admission-predictor' },
+    { label: 'College match', icon: GraduationCap, page: 'college-match' },
+    { label: 'Loan center', icon: DollarSign, page: 'loan-center' },
+    { label: 'EMI calculator', icon: Wallet, page: 'emi-calculator' },
+    { label: 'AI journey', icon: Sparkles, page: 'ai-journey' },
+    { label: 'Browser extension', icon: Puzzle, page: 'extension' },
   ]
 
-  const targets = profile.targetCountries || profile.targetCountry || []
+  const goIndiaActions: { label: string; icon: any; page: PageType }[] = [
+    { label: 'India predictor', icon: Target, page: 'domestic-admission-predictor' },
+    { label: 'College match', icon: GraduationCap, page: 'college-match' },
+    { label: 'Domestic loans', icon: DollarSign, page: 'domestic-loan-center' },
+    { label: 'EMI calculator', icon: Wallet, page: 'emi-calculator' },
+    { label: 'Scholarships', icon: Award, page: 'scholarship-hunter' },
+    { label: 'Browser extension', icon: Puzzle, page: 'extension' },
+  ]
+
+  const actions = track === 'abroad' ? goAbroadActions : goIndiaActions
 
   return (
-    <div className="max-w-6xl space-y-6">
-      {/* Welcome */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold" style={{ color: 'var(--foreground)' }}>
-          Welcome back, {profile.name || 'Student'}! 👋
-        </h1>
-        <p style={{ color: 'var(--foreground-secondary)' }}>
-          Here&apos;s your personalized study abroad journey at a glance.
-        </p>
-      </div>
-
-      {/* Top Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Dream Score Ring */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          className="card card-gradient sm:row-span-2">
-          <div className="flex items-center gap-2 mb-4">
-            <Sparkles className="w-4 h-4" style={{ color: 'var(--secondary)' }} />
-            <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Dream Score™</span>
-          </div>
-          <div className="dream-score-ring mx-auto">
-            <svg viewBox="0 0 200 200" className="w-full h-full">
-              <circle cx="100" cy="100" r="85" fill="none" stroke="var(--background-secondary)" strokeWidth="12" />
-              <circle cx="100" cy="100" r="85" fill="none"
-                stroke="url(#scoreGrad)" strokeWidth="12" strokeLinecap="round"
-                strokeDasharray={`${(dreamScore / 1000) * 534} 534`} />
-              <defs>
-                <linearGradient id="scoreGrad"><stop offset="0%" stopColor="var(--primary)" /><stop offset="100%" stopColor="var(--secondary)" /></linearGradient>
-              </defs>
-            </svg>
-            <div className="score-value">
-              <span className="text-3xl font-extrabold" style={{ color: 'var(--primary-light)' }}>{dreamScore}</span>
-              <span className="text-xs" style={{ color: 'var(--foreground-muted)' }}>/1000</span>
+    <div className="max-w-6xl mx-auto pb-12 space-y-6">
+      {/* HERO */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="relative rounded-3xl overflow-hidden border"
+        style={{
+          borderColor: 'var(--border)',
+          background: 'linear-gradient(135deg, rgba(99,102,241,0.10), rgba(6,182,212,0.06))',
+        }}
+      >
+        <div className="absolute inset-0 pointer-events-none bg-grid opacity-50" />
+        <div className="relative p-6 sm:p-8">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold" style={{ color: 'var(--foreground)' }}>
+                Welcome back, {name.split(' ')[0]}.
+              </h1>
+              <p className="text-sm mt-1" style={{ color: 'var(--foreground-secondary)' }}>
+                Pick a track and we'll line up the right colleges, scholarships, and updates for you.
+              </p>
             </div>
+            <TrackSwitcher track={track} onChange={setTrack} />
           </div>
-          <div className="text-center mt-3">
-            <div className="flex items-center justify-center gap-1 text-sm" style={{ color: 'var(--success)' }}>
-              <ArrowUpRight className="w-4 h-4" /> Score Updated
-            </div>
-            <button onClick={() => setCurrentPage('career-navigator')}
-              className="text-sm mt-2 flex items-center gap-1 mx-auto" style={{ color: 'var(--primary-light)' }}>
-              Improve Score <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </motion.div>
 
-        {/* Academic */}
-        <div className="stat-card">
-          <div className="text-xs mb-1" style={{ color: 'var(--foreground-muted)' }}>Academic</div>
-          <div className="text-2xl font-bold" style={{ color: 'var(--foreground)' }}>
-            {profile.undergradCgpa || profile.cgpa || 'N/A'}<span className="text-sm font-normal">/10</span>
-          </div>
-          <div className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>
-            GRE: {profile.greScoreStr || profile.greScore || 'N/A'}
-          </div>
-        </div>
-
-        {/* Target */}
-        <div className="stat-card">
-          <div className="text-xs mb-1" style={{ color: 'var(--foreground-muted)' }}>Target</div>
-          <div className="text-2xl font-bold" style={{ color: 'var(--success)' }}>{targets.length} <span className="text-sm font-normal">countries</span></div>
-          <div className="text-xs truncate" style={{ color: 'var(--foreground-secondary)' }}>{targets.join(', ') || 'Not set'}</div>
-        </div>
-
-        {/* Budget in INR */}
-        <div className="stat-card">
-          <div className="text-xs mb-1" style={{ color: 'var(--foreground-muted)' }}>Est. Budget</div>
-          <div className="text-2xl font-bold" style={{ color: 'var(--foreground)' }}>{totalBudgetINR > 0 ? formatINR(totalBudgetINR) : 'N/A'}</div>
-          <div className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>{profile.expectedBudgetStr || 'No budget set'}</div>
-        </div>
-
-        {/* Loan & EMI */}
-        <div className="stat-card">
-          <div className="text-xs mb-1" style={{ color: 'var(--foreground-muted)' }}>Loan Required</div>
-          <div className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{loanNeededINR > 0 ? formatINR(loanNeededINR) : 'N/A'}</div>
-          <div className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>
-            {monthlyEMI > 0 ? `Est EMI: ${formatINR(monthlyEMI)}/mo` : 'No loan needed'}
-          </div>
-        </div>
-
-        {/* Gamification */}
-        <div className="stat-card">
-          <div className="text-xs mb-1" style={{ color: 'var(--foreground-muted)' }}>Gamification</div>
-          <div className="flex items-center gap-2">
-            <span className="streak-fire"><Flame className="w-4 h-4" /> {profile.streakDays}d</span>
-            <span className="badge badge-primary"><Zap className="w-3 h-3 mr-1" />{profile.xpPoints} XP</span>
-          </div>
-          <div className="text-xs mt-1" style={{ color: 'var(--foreground-secondary)' }}>{profile.badges?.length || 0} badges earned</div>
-        </div>
-
-        {/* Scholarships Matches */}
-        <div className="stat-card cursor-pointer" onClick={() => setCurrentPage('scholarship-hunter')}>
-          <div className="text-xs mb-1" style={{ color: 'var(--foreground-muted)' }}>Scholarships</div>
-          <div className="text-2xl font-bold text-amber-500">12+ <span className="text-sm font-normal">matches</span></div>
-          <div className="text-xs flex items-center gap-1" style={{ color: 'var(--foreground-secondary)' }}>
-            <Sparkles className="w-3 h-3 text-amber-400" /> ₹8.5L potential aid
-          </div>
-        </div>
-      </div>
-
-      {/* Profile Snapshot 9-Step Review */}
-      <div className="mt-8">
-        <div className="flex justify-between items-end mb-3">
-          <h2 className="text-base font-semibold flex items-center gap-2" style={{ color: 'var(--foreground)' }}>
-            <User className="w-4 h-4 text-primary" /> Your Profile Snapshot
-          </h2>
-          <button 
-            onClick={() => setCurrentPage('onboarding')}
-            className="text-xs text-primary hover:text-primary-light flex items-center gap-1"
-          >
-            Edit Profile <ChevronRight className="w-3 h-3" />
-          </button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <SnapshotCard title="Identity & Academics" icon={User}>
-            <p><strong>Education:</strong> {profile.educationLevel || 'N/A'}</p>
-            <p><strong>College:</strong> {profile.undergradCollege || 'N/A'}</p>
-            <p><strong>Degree:</strong> {profile.undergradDegree || 'N/A'}</p>
-            <p><strong>CGPA:</strong> {profile.undergradCgpa || profile.cgpa || 'N/A'}</p>
-          </SnapshotCard>
-          <SnapshotCard title="Work Experience" icon={Briefcase}>
-            <p><strong>Status:</strong> {profile.isWorkingProfessional || 'N/A'}</p>
-            <p><strong>Company:</strong> {profile.companyName || 'N/A'}</p>
-            <p><strong>Role:</strong> {profile.jobRole || 'N/A'}</p>
-            <p><strong>Years Exp:</strong> {profile.yearsExperience || profile.workExpYears || '0'}</p>
-          </SnapshotCard>
-          <SnapshotCard title="Study Goals" icon={Globe}>
-            <p><strong>Goal:</strong> {profile.studyGoal || 'N/A'}</p>
-            <p><strong>Destinations:</strong> {targets.join(', ') || 'N/A'}</p>
-            <p><strong>Degree:</strong> {profile.targetDegree || profile.targetProgram || 'N/A'}</p>
-            <p><strong>Intake:</strong> {profile.intakeTarget || 'N/A'}</p>
-          </SnapshotCard>
-          <SnapshotCard title="Exams & Universities" icon={BookOpen}>
-            <p><strong>GRE:</strong> {profile.greScoreStr || profile.greScore || 'N/A'} ({profile.greStatus || 'N/A'})</p>
-            <p><strong>IELTS/TOEFL:</strong> {profile.ieltsScore || profile.toeflScore || 'N/A'} ({profile.ieltsStatus || 'N/A'})</p>
-            <p className="truncate"><strong>Dream Unis:</strong> {(profile.dreamUniversities || []).join(', ') || 'None yet'}</p>
-          </SnapshotCard>
-          <SnapshotCard title="Financials" icon={Wallet}>
-            <p><strong>Funding:</strong> {profile.fundingSource || 'N/A'}</p>
-            <p><strong>Budget:</strong> {profile.expectedBudgetStr || 'N/A'}</p>
-            <p><strong>Loan Est:</strong> {profile.loanEstimateStr || 'N/A'}</p>
-            <p><strong>Collateral:</strong> {profile.collateralAvailableStr || 'N/A'}</p>
-          </SnapshotCard>
-          <SnapshotCard title="Documents" icon={FileText}>
-            <p><strong>Passport:</strong> {profile.docPassport || 'N/A'}</p>
-            <p><strong>Transcripts:</strong> {profile.docTranscripts || 'N/A'}</p>
-            <p><strong>SOP:</strong> {profile.docSop || 'N/A'}</p>
-            <p><strong>LORs:</strong> {profile.docLors || 'N/A'}</p>
-          </SnapshotCard>
-        </div>
-      </div>
-
-      {/* Quick Actions */}
-      <div className="mt-8">
-        <h2 className="text-base font-semibold mb-3" style={{ color: 'var(--foreground)' }}>Quick Actions</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-          {quickActions.map((action) => (
-            <motion.button key={action.label} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-              onClick={() => setCurrentPage(action.page)}
-              className="card flex flex-col items-center gap-2 py-4 cursor-pointer text-center">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                style={{ background: `${action.color}12`, border: `1px solid ${action.color}25` }}>
-                <action.icon className="w-5 h-5" style={{ color: action.color }} />
-              </div>
-              <span className="text-xs font-medium" style={{ color: 'var(--foreground-secondary)' }}>{action.label}</span>
-            </motion.button>
-          ))}
-        </div>
-      </div>
-
-      {/* Journey Stage & Next Action */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="card md:col-span-2 flex items-center justify-between p-6 overflow-hidden relative">
-          <div className="relative z-10 space-y-1">
-            <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Your Current Stage</div>
-            <h3 className="text-xl font-bold text-[var(--foreground)]">{profile.journeyStage}</h3>
-            <p className="text-xs text-white/40">Next Step: {nextBestAction.text}</p>
-          </div>
-          <div className="flex items-center gap-1 sm:gap-2 relative z-10">
-            {['EXPLORER', 'RESEARCHER', 'APPLICANT', 'LOAN_SEEKER', 'SUBMITTED'].map((s, i, arr) => {
-              const active = arr.indexOf(profile.journeyStage) >= i
-              return (
-                <div key={s} className="flex items-center">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                    active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-white/5 text-white/20'
-                  }`}>
-                    {i + 1}
-                  </div>
-                  {i < arr.length - 1 && <div className={`w-4 sm:w-8 h-[2px] ${active ? 'bg-indigo-600' : 'bg-white/5'}`} />}
-                </div>
-              )
-            })}
-          </div>
-          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-3xl rounded-full" />
-        </div>
-
-        <motion.button whileHover={{ scale: 1.02 }} onClick={() => setCurrentPage(nextBestAction.page)}
-          className="card border-indigo-500/30 bg-indigo-500/5 flex flex-col justify-center p-6 gap-2">
-          <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Next Best Action</div>
-          <div className="text-sm font-bold text-[var(--foreground)] leading-tight">{nextBestAction.text}</div>
-          <div className="flex items-center gap-1 text-indigo-400 text-xs font-medium">
-            Start Now <ArrowUpRight className="w-3 h-3" />
-          </div>
-        </motion.button>
-      </div>
-
-      {/* Smart Nudges */}
-      <div>
-        <h2 className="text-base font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--foreground)' }}>
-          <Bell className="w-4 h-4" style={{ color: 'var(--accent)' }} /> Smart Nudges
-        </h2>
-        <div className="space-y-2">
-          {notifications.length > 0 ? (
-            notifications.slice(0, 3).map((n, i) => (
-              <motion.button key={n.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.1 }}
-                onClick={() => n.actionPage && setCurrentPage(n.actionPage)}
-                className="card w-full text-left flex items-center gap-3 hover:bg-white/[0.02] transition-all" style={{ padding: '0.75rem 1rem' }}>
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  n.type === 'urgent' ? 'bg-red-500 animate-pulse' :
-                  n.type === 'warning' ? 'bg-amber-500' :
-                  n.type === 'success' ? 'bg-green-500' : 'bg-indigo-500'
-                }`} />
-                <span className="text-sm flex-1 font-medium" style={{ color: 'var(--foreground)' }}>{n.title}</span>
-                <span className="text-xs hidden sm:block" style={{ color: 'var(--foreground-muted)' }}>{n.message.slice(0, 50)}...</span>
-                <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--foreground-muted)' }} />
-              </motion.button>
-            ))
-          ) : (
-            <div className="card text-center py-6 text-white/20 text-xs italic">
-              Analyzing your journey for insights...
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* University Matches */}
-      <div>
-        <h2 className="text-base font-semibold mb-3" style={{ color: 'var(--foreground)' }}>Top University Matches</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {topMatches.slice(0, 3).map((u, i) => (
-            <motion.div key={u.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.08 }}
-              className="card glass glass-hover cursor-pointer"
-              onClick={() => setCurrentPage('admission-predictor')}>
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <GraduationCap className="w-5 h-5 mb-1" style={{ color: 'var(--primary-light)' }} />
-                  <div className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>{u.name}</div>
-                  <div className="text-xs" style={{ color: 'var(--foreground-muted)' }}>{u.city}, {u.country}</div>
-                </div>
-                <span className={`tag-${u.admission.category}`}>{u.admission.category}</span>
-              </div>
-              <div className="text-xs mb-1" style={{ color: 'var(--foreground-secondary)' }}>{u.program}</div>
-              <div className="text-xs mb-2" style={{ color: 'var(--foreground-muted)' }}>
-                Tuition: {formatINR(u.tuitionINR)}/yr • Avg Salary: {formatINR(u.salaryINR)}/yr
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold" style={{
-                  color: u.admission.category === 'safety' ? '#10b981' : u.admission.category === 'match' ? '#f59e0b' : '#ef4444'
-                }}>{u.admission.probability}% chance</span>
-                <span className="text-xs" style={{ color: 'var(--foreground-muted)' }}>#{u.ranking} ranked</span>
-              </div>
-              <div className="progress-bar mt-2">
-                <div className="h-full rounded-full" style={{
-                  width: `${u.admission.probability}%`,
-                  background: u.admission.category === 'safety' ? '#10b981' : u.admission.category === 'match' ? '#f59e0b' : '#ef4444'
-                }} />
-              </div>
+          {/* Personal snapshot strip */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={track}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25 }}
+              className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3"
+            >
+              <Stat label={track === 'abroad' ? 'Target country' : 'Home state'} value={track === 'abroad' ? targetCountries[0] || '—' : targetState || '—'} icon={track === 'abroad' ? Globe2 : MapPin} />
+              <Stat label="Target degree" value={targetDegree || '—'} icon={GraduationCap} />
+              <Stat label="Field of interest" value={targetField || '—'} icon={BookOpen} />
+              <Stat label="Intake" value={intake || '—'} icon={Calendar} />
             </motion.div>
-          ))}
+          </AnimatePresence>
+        </div>
+      </motion.div>
+
+      {/* MAIN GRID */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Left column: actions + scores */}
+        <div className="lg:col-span-1 space-y-5">
+          <Card title="Quick actions" icon={ArrowRight}>
+            <div className="grid grid-cols-2 gap-2">
+              {actions.map((a) => (
+                <button
+                  key={a.label}
+                  onClick={() => setCurrentPage(a.page)}
+                  className="group flex items-center gap-2 rounded-xl px-3 py-3 text-left transition-all"
+                  style={{
+                    background: 'var(--background-secondary)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center"
+                    style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--primary-light)' }}
+                  >
+                    <a.icon className="w-4 h-4" />
+                  </div>
+                  <span className="text-xs font-semibold flex-1 truncate" style={{ color: 'var(--foreground)' }}>
+                    {a.label}
+                  </span>
+                  <ArrowRight className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 transition-opacity" />
+                </button>
+              ))}
+            </div>
+          </Card>
+
+          <Card title="Your test scores" icon={Award}>
+            {examScores.length === 0 ? (
+              <div className="text-sm" style={{ color: 'var(--foreground-muted)' }}>
+                No exam scores yet.
+                <button
+                  onClick={() => setCurrentPage('profile')}
+                  className="ml-1 text-primary-light underline"
+                >
+                  Add them in Profile
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {examScores.map((e) => (
+                  <div
+                    key={e.name}
+                    className="rounded-lg px-3 py-2"
+                    style={{ background: 'var(--background-secondary)', border: '1px solid var(--border)' }}
+                  >
+                    <div className="text-[10px] uppercase tracking-widest font-bold" style={{ color: 'var(--foreground-muted)' }}>
+                      {e.name}
+                    </div>
+                    <div className="text-base font-bold" style={{ color: 'var(--primary-light)' }}>
+                      {e.score}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {cgpa && (
+              <div className="mt-3 text-xs" style={{ color: 'var(--foreground-secondary)' }}>
+                Undergrad CGPA: <span className="font-semibold" style={{ color: 'var(--foreground)' }}>{cgpa}</span>
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* Center column: news */}
+        <div className="lg:col-span-2 space-y-5">
+          <Card
+            title={track === 'abroad' ? 'News for your destinations' : 'Updates from your region'}
+            icon={Newspaper}
+            right={
+              <button onClick={() => setCurrentPage('news')} className="text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--primary-light)' }}>
+                See all <ArrowRight className="w-3 h-3" />
+              </button>
+            }
+          >
+            {loadingNews ? (
+              <div className="py-8 flex justify-center">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              </div>
+            ) : news.length === 0 ? (
+              <div className="text-sm py-3" style={{ color: 'var(--foreground-muted)' }}>
+                No news right now. Check back later.
+              </div>
+            ) : (
+              <ul className="space-y-3">
+                {news.map((n, i) => (
+                  <li key={i}>
+                    <a
+                      href={n.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group flex items-start gap-3 rounded-xl p-3 transition-all"
+                      style={{
+                        background: 'var(--background-secondary)',
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      <div
+                        className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                        style={{ background: 'rgba(6,182,212,0.10)', color: 'var(--secondary-light)' }}
+                      >
+                        <Newspaper className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm leading-snug line-clamp-2" style={{ color: 'var(--foreground)' }}>
+                          {n.title}
+                        </div>
+                        <div className="text-xs mt-1 truncate" style={{ color: 'var(--foreground-muted)' }}>
+                          {n.source || new URL(n.link).hostname} {n.date ? `· ${n.date}` : ''}
+                        </div>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100 transition-opacity" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
         </div>
       </div>
+
+      {/* SCHOLARSHIPS */}
+      <Card
+        title={track === 'abroad' ? 'Scholarships matching your profile' : 'Indian scholarships & schemes'}
+        icon={Award}
+        right={
+          <button
+            onClick={() => setCurrentPage('scholarship-hunter')}
+            className="text-xs font-semibold flex items-center gap-1"
+            style={{ color: 'var(--primary-light)' }}
+          >
+            Open hunter <ArrowRight className="w-3 h-3" />
+          </button>
+        }
+      >
+        {loadingScholarships ? (
+          <div className="py-8 flex justify-center">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          </div>
+        ) : scholarships.length === 0 ? (
+          <div className="text-sm py-3" style={{ color: 'var(--foreground-muted)' }}>
+            We couldn't fetch live scholarships right now. Open the Scholarships page to browse them.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {scholarships.map((s, i) => (
+              <a
+                key={i}
+                href={s.applyUrl || s.sourceUrl || '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="card flex flex-col gap-2 hover:border-primary transition-colors"
+              >
+                <div className="flex items-start gap-2">
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center"
+                    style={{ background: 'rgba(245,158,11,0.10)', color: 'var(--accent-light)' }}
+                  >
+                    <Award className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm leading-tight" style={{ color: 'var(--foreground)' }}>
+                      {s.name}
+                    </div>
+                    <div className="text-[11px]" style={{ color: 'var(--foreground-muted)' }}>
+                      {s.provider}
+                    </div>
+                  </div>
+                </div>
+                {s.summary && (
+                  <p className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>
+                    {s.summary}
+                  </p>
+                )}
+                <div className="flex items-center justify-between mt-auto pt-2">
+                  <span className="text-[11px] font-semibold" style={{ color: 'var(--accent-light)' }}>
+                    {s.interestOrAmount || '—'}
+                  </span>
+                  <span className="text-[11px]" style={{ color: 'var(--foreground-muted)' }}>
+                    {s.tenureOrDeadline || ''}
+                  </span>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* CTA: extension */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="card-gradient card flex flex-col sm:flex-row items-center gap-4 p-6"
+      >
+        <div
+          className="w-14 h-14 rounded-2xl flex items-center justify-center text-white"
+          style={{ background: 'var(--gradient-primary)' }}
+        >
+          <Puzzle className="w-7 h-7" />
+        </div>
+        <div className="flex-1 text-center sm:text-left">
+          <h3 className="font-bold" style={{ color: 'var(--foreground)' }}>
+            Auto-fill any application form with the EduPilot extension
+          </h3>
+          <p className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>
+            Maps your profile to any university/loan portal in one click. Voice typo guard included.
+          </p>
+        </div>
+        <button
+          onClick={() => setCurrentPage('extension')}
+          className="btn-primary inline-flex items-center gap-2 whitespace-nowrap"
+        >
+          Get it now <ArrowRight className="w-4 h-4" />
+        </button>
+      </motion.div>
     </div>
   )
 }
 
-function Sparkles(props: React.SVGProps<SVGSVGElement> & { className?: string; style?: React.CSSProperties }) {
+// ---------- helpers ----------
+
+function TrackSwitcher({ track, onChange }: { track: Track; onChange: (t: Track) => void }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
-    </svg>
+    <div
+      className="inline-flex p-1 rounded-2xl"
+      style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+    >
+      {(['abroad', 'india'] as const).map((t) => (
+        <button
+          key={t}
+          onClick={() => onChange(t)}
+          className="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+          style={{
+            background: track === t ? 'var(--gradient-primary)' : 'transparent',
+            color: track === t ? 'white' : 'var(--foreground-secondary)',
+          }}
+        >
+          {t === 'abroad' ? <Globe2 className="w-3.5 h-3.5" /> : <MapPin className="w-3.5 h-3.5" />}
+          {t === 'abroad' ? 'Study Abroad' : 'Study in India'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function Card({
+  title,
+  icon: Icon,
+  children,
+  right,
+}: {
+  title: string
+  icon: any
+  children: any
+  right?: any
+}) {
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center"
+            style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--primary-light)' }}
+          >
+            <Icon className="w-4 h-4" />
+          </div>
+          <h2 className="font-bold text-sm" style={{ color: 'var(--foreground)' }}>
+            {title}
+          </h2>
+        </div>
+        {right}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Stat({ label, value, icon: Icon }: { label: string; value: string; icon: any }) {
+  return (
+    <div
+      className="rounded-xl p-3"
+      style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+    >
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold" style={{ color: 'var(--foreground-muted)' }}>
+        <Icon className="w-3 h-3" /> {label}
+      </div>
+      <div className="text-sm font-bold mt-1 truncate" style={{ color: 'var(--foreground)' }}>
+        {value}
+      </div>
+    </div>
   )
 }

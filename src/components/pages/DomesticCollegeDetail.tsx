@@ -35,6 +35,8 @@ import {
   Check,
   Link as LinkIcon,
   ExternalLink,
+  Download,
+  FileText,
 } from 'lucide-react'
 import {
   ResponsiveContainer,
@@ -48,6 +50,7 @@ import {
 } from 'recharts'
 import { useAppStore } from '@/lib/store'
 import type { DomesticCollegeDetailData, EntranceExamStream } from '@/lib/types'
+import { downloadHTMLReport, downloadPDFReport } from '@/lib/domesticReport'
 
 type TabKey = 'overview' | 'placements' | 'curriculum' | 'reviews' | 'campus'
 
@@ -244,20 +247,38 @@ export default function DomesticCollegeDetail() {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => updateProfile({ targetInstituteId: selectedCollege.id })}
-            className={isSelected ? 'btn-primary' : 'btn-secondary'}
-            aria-pressed={isSelected}
-          >
-            {isSelected ? (
-              <span className="inline-flex items-center gap-1">
-                <Check className="w-4 h-4" /> Selected as target
-              </span>
-            ) : (
-              'Set as target institute'
-            )}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => downloadHTMLReport(profile, selectedCollege, detail)}
+              className="btn-secondary inline-flex items-center gap-1.5 text-sm"
+              title="Download an interactive HTML report"
+            >
+              <Download className="w-4 h-4" /> HTML
+            </button>
+            <button
+              type="button"
+              onClick={() => downloadPDFReport(profile, selectedCollege, detail)}
+              className="btn-secondary inline-flex items-center gap-1.5 text-sm"
+              title="Open a print-ready PDF report"
+            >
+              <FileText className="w-4 h-4" /> PDF
+            </button>
+            <button
+              type="button"
+              onClick={() => updateProfile({ targetInstituteId: selectedCollege.id })}
+              className={isSelected ? 'btn-primary' : 'btn-secondary'}
+              aria-pressed={isSelected}
+            >
+              {isSelected ? (
+                <span className="inline-flex items-center gap-1">
+                  <Check className="w-4 h-4" /> Selected as target
+                </span>
+              ) : (
+                'Set as target institute'
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

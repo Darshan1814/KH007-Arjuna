@@ -6,10 +6,10 @@ import { useTrack } from '@/lib/useTrack'
 import { filterNavSections } from '@/lib/navVisibility'
 import {
   GraduationCap, LayoutDashboard, Brain, Target, TrendingUp,
-  DollarSign, Calculator, BookOpen, Shield, MessageCircle,
-  Award, Users, Globe, Menu, X, Flame, Star, Zap, Newspaper,
-  Sun, Moon, ClipboardList, Calendar, Trophy, UserCheck, Gift,
-  PenTool, FileText, User, LogOut, Puzzle
+  DollarSign, Calculator, MessageCircle,
+  Award, Users, Menu, X, Flame, Star, Zap, Newspaper,
+  Sun, Moon, ClipboardList, Calendar, UserCheck,
+  FileText, User, LogOut, Puzzle
 } from 'lucide-react'
 import type { PageType } from '@/lib/types'
 import DashboardHome from './pages/DashboardHome'
@@ -33,8 +33,6 @@ import DocumentVault from './pages/DocumentVault'
 import GrowthTools from './pages/GrowthTools'
 import NotificationsDropdown from './NotificationsDropdown'
 import NudgeEngine from './NudgeEngine'
-import { calculateProfileCompleteness, calculateProfileScore } from '@/lib/profileCompleteness'
-import ProfileCompletionGate from './ProfileCompletionGate'
 import ProfileWarningBanner from './ProfileWarningBanner'
 import GamificationPage from './pages/GamificationPage'
 import TimelinePage from './pages/TimelinePage'
@@ -55,6 +53,7 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
     label: 'Main',
     items: [
       { icon: LayoutDashboard, label: 'Dashboard', page: 'dashboard' },
+      { icon: Puzzle, label: 'Extension', page: 'extension' },
       { icon: User, label: 'Profile', page: 'profile' },
       { icon: ClipboardList, label: 'Form Guide', page: 'form-guide' },
     ]
@@ -62,7 +61,6 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
   {
     label: 'Unique',
     items: [
-      { icon: Calendar, label: 'Timeline', page: 'timeline' },
       { icon: MessageCircle, label: 'AI Mentor', page: 'mentor-chat' },
       { icon: Users, label: 'Expert Network', page: 'expert-directory' },
       { icon: MessageCircle, label: 'My Chats', page: 'user-expert-chat' },
@@ -71,9 +69,7 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
   {
     label: 'Explore',
     items: [
-      { icon: Star, label: '⭐ AI Education Journey', page: 'ai-journey' },
-      { icon: Users, label: 'Clone Journey', page: 'clone-journey' },
-      { icon: Brain, label: 'Career Navigator', page: 'career-navigator' },
+      { icon: Star, label: 'AI Education Journey', page: 'ai-journey' },
       { icon: Award, label: 'Scholarships', page: 'scholarship-hunter' },
       { icon: Newspaper, label: 'News', page: 'news' },
     ]
@@ -85,14 +81,11 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
       { icon: GraduationCap, label: 'College Match', page: 'college-match' },
       { icon: Target, label: 'Domestic Predictor', page: 'domestic-admission-predictor' },
       { icon: TrendingUp, label: 'ROI Calculator', page: 'roi-calculator' },
-      { icon: Globe, label: 'Currency Risk', page: 'currency-risk' },
     ]
   },
   {
     label: 'Prepare',
     items: [
-      { icon: BookOpen, label: 'SOP Co-Pilot', page: 'sop-copilot' },
-      { icon: Shield, label: 'Visa Simulator', page: 'visa-simulator' },
       { icon: UserCheck, label: 'Interview Prep', page: 'interview-prep' },
       { icon: FileText, label: 'Document Vault', page: 'document-vault' },
     ]
@@ -103,15 +96,6 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
       { icon: DollarSign, label: 'Loan Center', page: 'loan-center' },
       { icon: DollarSign, label: 'Domestic Loan Center', page: 'domestic-loan-center' },
       { icon: Calculator, label: 'EMI Calculator', page: 'emi-calculator' },
-    ]
-  },
-  {
-    label: 'Grow',
-    items: [
-      { icon: Trophy, label: 'Achievements', page: 'gamification' },
-      { icon: Gift, label: 'Referrals', page: 'referrals' },
-      { icon: PenTool, label: 'Growth Tools', page: 'growth-tools' },
-      { icon: Puzzle, label: 'Extension', page: 'extension' },
     ]
   }
 ]
@@ -158,9 +142,6 @@ export default function DashboardLayout() {
 
   // Keep profiles.status in sync with whether this student tab is open.
   usePresence(profile?.id)
-
-  const profileScore = useMemo(() => calculateProfileScore(profile), [profile])
-  const profilePct = profileScore.totalScore
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -270,37 +251,14 @@ export default function DashboardLayout() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold truncate" style={{ color: 'var(--foreground)' }}>{profile.name || 'Student'}</div>
-              <div className="flex items-center gap-2">
-                <span className="streak-fire"><Flame className="w-3 h-3" /> {profile.streakDays}d</span>
-                <span className="text-xs" style={{ color: 'var(--foreground-muted)' }}>{profile.xpPoints} XP</span>
-              </div>
-            </div>
-          </div>
-          <div className="mt-3 p-2 rounded-lg" style={{ background: 'var(--background)' }}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs" style={{ color: 'var(--foreground-muted)' }}>Profile Completeness</span>
-              <span className="text-sm font-bold" style={{ color: profilePct >= 80 ? 'var(--success)' : 'var(--warning)' }}>{profilePct}%</span>
-            </div>
-            <div className="progress-bar">
-              <div className="progress-bar-fill" style={{ width: `${profilePct}%`, background: profilePct >= 80 ? 'var(--success)' : 'var(--warning)' }} />
-            </div>
-          </div>
-          <div className="mt-3 p-2 rounded-lg" style={{ background: 'var(--background)' }}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs" style={{ color: 'var(--foreground-muted)' }}>Dream Score™</span>
-              <span className="text-sm font-bold" style={{ color: 'var(--primary-light)' }}>{profile.dreamScore}/1000</span>
-            </div>
-            <div className="progress-bar">
-              <div className="progress-bar-fill" style={{ width: `${(profile.dreamScore / 1000) * 100}%` }} />
             </div>
           </div>
         </div>
 
         {/* Nav items */}
-        <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {visibleNavSections.map(section => (
             <div key={section.label} className="space-y-1">
-              <div className="px-3 text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--foreground-muted)', opacity: 0.5 }}>{section.label}</div>
               {section.items.map(item => (
                 <button key={item.page} onClick={() => { setCurrentPage(item.page); if (window.innerWidth < 768) toggleSidebar() }}
                   className={`sidebar-link w-full ${currentPage === item.page ? 'active' : ''}`}>
@@ -311,36 +269,6 @@ export default function DashboardLayout() {
             </div>
           ))}
         </nav>
-
-        {/* Theme Toggle + Badges */}
-        <div className="p-4 border-t space-y-3" style={{ borderColor: 'var(--border)' }}>
-          {/* Theme toggle */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs" style={{ color: 'var(--foreground-muted)' }}>Theme</span>
-            <button onClick={toggleTheme}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all"
-              style={{ background: 'var(--background)', border: '1px solid var(--border)' }}>
-              {theme === 'dark' ? (
-                <><Moon className="w-3.5 h-3.5" style={{ color: 'var(--primary-light)' }} /><span className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>Dark</span></>
-              ) : (
-                <><Sun className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} /><span className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>Light</span></>
-              )}
-            </button>
-          </div>
-          {/* Badges */}
-          {profile.badges.length > 0 && (
-            <div>
-              <div className="text-xs mb-2" style={{ color: 'var(--foreground-muted)' }}>Badges</div>
-              <div className="flex flex-wrap gap-1">
-                {profile.badges.slice(0, 4).map(b => (
-                  <span key={b} className="badge badge-primary text-[10px]">
-                    <Star className="w-3 h-3 mr-1" />{b}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
       </aside>
 
       {/* Main content */}
@@ -357,8 +285,6 @@ export default function DashboardLayout() {
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="streak-fire hidden sm:flex"><Flame className="w-4 h-4" /> {profile.streakDays}d</div>
-            <div className="badge badge-primary"><Zap className="w-3 h-3 mr-1" /> {profile.xpPoints} XP</div>
             <NotificationsDropdown />
             <button onClick={toggleTheme} className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
               style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -373,19 +299,8 @@ export default function DashboardLayout() {
 
         {/* Page content */}
         <div className="p-4 sm:p-6">
-          {(currentPage === 'ai-journey' && profilePct < 80) ? (
-            <ProfileCompletionGate />
-          ) : (
-            <>
-              {currentPage === 'ai-journey' && profilePct < 100 && (
-                <div className="p-4 mb-4 rounded-xl text-sm font-medium" style={{ background: 'var(--warning)', color: '#000' }}>
-                  Complete your profile for more accurate recommendations.
-                </div>
-              )}
-              {currentPage !== 'ai-journey' && <ProfileWarningBanner />}
-              <PageContent page={currentPage} />
-            </>
-          )}
+          {currentPage !== 'ai-journey' && <ProfileWarningBanner />}
+          <PageContent page={currentPage} />
         </div>
       </main>
       <NudgeEngine />

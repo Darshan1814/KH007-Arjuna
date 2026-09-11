@@ -39,6 +39,7 @@ import {
   Sparkles,
   ExternalLink,
   Star,
+  Search,
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import {
@@ -199,50 +200,62 @@ export default function DomesticLoanCenter({
     ? `${selectedCollege.name}|${selectedCollege.city}|${selectedCollege.branch}`
     : ''
 
+  const [searchTerm, setSearchTerm] = useState('')
+
+  const runLoanSearch = async (query?: string) => {
+    setLiveLoading(true)
+    setLiveError('')
+    try {
+      const res = await fetch('/api/domestic-loans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          college: selectedCollege
+            ? {
+                name: selectedCollege.name,
+                city: selectedCollege.city,
+                state: selectedCollege.state,
+                collegeType: selectedCollege.collegeType,
+                branch: selectedCollege.branch,
+              }
+            : null,
+          familyIncome: collegeIncome,
+          coApplicant: collegeCoApplicant,
+          collateral: collegeCollateral,
+          // Profile signals so default load is personalised.
+          profile: {
+            name: profile.name,
+            city: profile.city,
+            state: profile.state,
+            twelfthMarks: profile.twelfthMarks,
+            undergrad_cgpa: profile.undergradCgpa,
+            entranceExams: profile.entranceExams,
+            jee_score: (profile as any).jee_score,
+            cet_score: (profile as any).cet_score,
+            neet_score: (profile as any).neet_score,
+            cat_score: (profile as any).cat_score,
+            gate_score: (profile as any).gate_score,
+            target_field: profile.targetField,
+            target_degree: profile.targetDegree,
+          },
+          userQuery: (query ?? searchTerm).trim(),
+        }),
+      })
+      if (!res.ok) throw new Error('Failed to load loans')
+      const data = await res.json()
+      const list: DomesticLoanResult[] = Array.isArray(data.options) ? data.options : []
+      setLiveLoans(list)
+      setLiveSource(list.length > 0 ? 'serper+gemini' : 'empty')
+      if (list.length === 0) setLiveError('No live loan products matched. Try a different search.')
+    } catch {
+      setLiveError('Could not load live loans. Try again in a moment.')
+    } finally {
+      setLiveLoading(false)
+    }
+  }
+
   useEffect(() => {
-    if (!selectedCollege) {
-      setLiveLoans([])
-      setLiveSource('')
-      return
-    }
-    let cancelled = false
-    const run = async () => {
-      setLiveLoading(true)
-      setLiveError('')
-      try {
-        const res = await fetch('/api/domestic-loans', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            college: {
-              name: selectedCollege.name,
-              city: selectedCollege.city,
-              state: selectedCollege.state,
-              collegeType: selectedCollege.collegeType,
-              branch: selectedCollege.branch,
-            },
-            familyIncome: collegeIncome,
-            coApplicant: collegeCoApplicant,
-            collateral: collegeCollateral,
-          }),
-        })
-        if (!res.ok) throw new Error('Failed to load loans')
-        const data = await res.json()
-        if (cancelled) return
-        const list: DomesticLoanResult[] = Array.isArray(data.options) ? data.options : []
-        setLiveLoans(list)
-        setLiveSource(list.length > 0 ? 'serper+gemini' : 'empty')
-        if (list.length === 0) setLiveError('No live loan products found for this college right now.')
-      } catch {
-        if (!cancelled) setLiveError('Could not load live loans. Showing the standard list below.')
-      } finally {
-        if (!cancelled) setLiveLoading(false)
-      }
-    }
-    run()
-    return () => {
-      cancelled = true
-    }
+    runLoanSearch()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCollegeKey])
 
@@ -428,49 +441,74 @@ export default function DomesticLoanCenter({
         </div>
       </div>
 
-      {/* ── 2b. Live, college-specific loans (Serper + Gemini) ─────────── */}
-      {selectedCollege && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div
-              className="text-base font-semibold flex items-center gap-2"
-              style={{ color: 'var(--foreground)' }}
-            >
-              <Sparkles className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-              Loans for {selectedCollege.name}
-            </div>
-            {liveLoading && (
-              <span
-                className="inline-flex items-center gap-2 text-xs"
-                style={{ color: 'var(--foreground-secondary)' }}
-              >
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Finding real loan
-                options...
-              </span>
-            )}
-            {!liveLoading && liveSource === 'serper+gemini' && (
-              <span className="badge badge-primary inline-flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> Live web data
-              </span>
-            )}
+      {/* ── 2b. Live loans (Serper + Gemini) — search-driven, always shown ─ */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div
+            className="text-base font-semibold flex items-center gap-2"
+            style={{ color: 'var(--foreground)' }}
+          >
+            <Sparkles className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+            {selectedCollege ? `Loans for ${selectedCollege.name}` : 'Live education-loan options'}
           </div>
-
-          {liveError && !liveLoading && (
-            <div
-              className="text-xs"
-              style={{ color: 'var(--foreground-muted)' }}
+          {liveLoading && (
+            <span
+              className="inline-flex items-center gap-2 text-xs"
+              style={{ color: 'var(--foreground-secondary)' }}
             >
-              {liveError}
-            </div>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Searching live loan options...
+            </span>
           )}
+          {!liveLoading && liveSource === 'serper+gemini' && (
+            <span className="badge badge-primary inline-flex items-center gap-1">
+              <Sparkles className="w-3 h-3" /> Live web data
+            </span>
+          )}
+        </div>
 
-          {!liveLoading &&
-            liveLoans.map((loan, i) => (
-              <motion.div
-                key={`${loan.applyUrl}-${i}`}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(i, 8) * 0.04 }}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            runLoanSearch(searchTerm)
+          }}
+          className="flex items-center gap-2"
+        >
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--foreground-muted)' }} />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder='e.g. "no collateral education loan for IIT students under ₹15L"'
+              className="input-field pl-10 text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={liveLoading}
+            className="btn-secondary inline-flex items-center gap-2 text-sm whitespace-nowrap"
+          >
+            {liveLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            {liveLoading ? 'Searching…' : searchTerm.trim() ? 'Search' : 'Refresh'}
+          </button>
+        </form>
+
+        {liveError && !liveLoading && (
+          <div
+            className="text-xs"
+            style={{ color: 'var(--foreground-muted)' }}
+          >
+            {liveError}
+          </div>
+        )}
+
+        {!liveLoading &&
+          liveLoans.map((loan, i) => (
+            <motion.div
+              key={`${loan.applyUrl}-${i}`}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(i, 8) * 0.04 }}
                 className="card glass glass-hover"
               >
                 <div className="flex flex-col lg:flex-row gap-4">
@@ -568,29 +606,12 @@ export default function DomesticLoanCenter({
                 </div>
               </motion.div>
             ))}
-        </div>
-      )}
-
-      {/* ── 3. Loan products list (standard eligibility matcher) ───────── */}
-      <div className="space-y-4">
-        {selectedCollege && liveLoans.length > 0 && (
-          <div
-            className="text-xs font-semibold uppercase tracking-wide"
-            style={{ color: 'var(--foreground-muted)' }}
-          >
-            Standard eligibility check
-          </div>
-        )}
-        {evaluatedProducts.map(({ product, result }, i) => (
-          <LoanProductRow
-            key={product.id}
-            product={product}
-            result={result}
-            index={i}
-            onMissingClick={followDeepLink}
-          />
-        ))}
       </div>
+
+      {/* ── 3. Standard eligibility list intentionally removed.
+              The live, college-specific loan list above (powered by
+              Serper + Gemini) is now the only loan results panel.
+        ──────────────────────────────────────────────────────────────── */}
 
       {/* ── 4. CSIS Preview side panel ─────────────────────────────────── */}
       <div className="card glass">
