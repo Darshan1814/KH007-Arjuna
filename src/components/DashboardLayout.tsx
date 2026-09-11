@@ -76,7 +76,6 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
   {
     label: 'Evaluate',
     items: [
-      { icon: Target, label: 'Admission Predictor', page: 'admission-predictor' },
       { icon: GraduationCap, label: 'College Match', page: 'college-match' },
       { icon: Target, label: 'Domestic Predictor', page: 'domestic-admission-predictor' },
       { icon: TrendingUp, label: 'ROI Calculator', page: 'roi-calculator' },
