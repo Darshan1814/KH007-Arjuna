@@ -13,7 +13,6 @@ import ExpertKYC from './pages/expert/ExpertKYC'
 import ExpertEarnings from './pages/expert/ExpertEarnings'
 import ExpertRequests from './pages/expert/ExpertRequests'
 import { createClient } from '@/lib/supabase/client'
-import { usePresence } from '@/lib/usePresence'
 
 const expertNavItems = [
   { id: 'expert-home', label: 'Dashboard Home', icon: Home },
@@ -27,21 +26,8 @@ const expertNavItems = [
 export default function ExpertLayout() {
   const { currentPage, setCurrentPage, sidebarOpen, toggleSidebar, profile, setUser } = useAppStore()
 
-  // Keep profiles.status in sync with whether this expert tab is open.
-  usePresence(profile?.id)
-
   const handleLogout = async () => {
     const supabase = createClient()
-    if (profile?.id) {
-      try {
-        await fetch('/api/presence', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: profile.id, status: 'offline' }),
-          keepalive: true,
-        })
-      } catch {}
-    }
     await supabase.auth.signOut()
     setUser(null)
     setCurrentPage('landing')

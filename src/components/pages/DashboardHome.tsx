@@ -61,8 +61,8 @@ export default function DashboardHome() {
     if (completeness < 70) return { text: 'Complete your profile to unlock loan rates', page: 'onboarding' as const, color: '#f59e0b' }
     if (profile.journeyStage === 'EXPLORER') return { text: 'Find universities for your profile', page: 'admission-predictor' as const, color: '#6366f1' }
     if (profile.journeyStage === 'RESEARCHER') return { text: 'Draft your SOP with AI Co-Pilot', page: 'sop-copilot' as const, color: '#ec4899' }
-    if (profile.journeyStage === 'APPLICANT') return { text: 'See live loan matches for your profile', page: 'loan-center' as const, color: '#10b981' }
-    if (profile.journeyStage === 'LOAN_SEEKER') return { text: 'Compare live loan options', page: 'loan-center' as const, color: '#8b5cf6' }
+    if (profile.journeyStage === 'APPLICANT') return { text: 'Start your loan application', page: 'loan-apply' as const, color: '#10b981' }
+    if (profile.journeyStage === 'LOAN_SEEKER') return { text: 'Check your application status', page: 'loan-apply' as const, color: '#8b5cf6' }
     return { text: 'Prepare for your visa interview', page: 'visa-simulator' as const, color: '#8b5cf6' }
   }, [profile])
 

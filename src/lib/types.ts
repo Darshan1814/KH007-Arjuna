@@ -145,6 +145,107 @@ export interface StudentProfile {
   referralCode?: string
   isOnboarded?: boolean
   created_at?: string
+
+  // ───────── Domestic Track MVP additions (additive only) ─────────
+  // Derived study-path indicator. Persisted via the content_interest jsonb codec.
+  track?: Track
+
+  // Onboarding Step 5 — Indian-exam inputs (numeric forms used by the predictor).
+  // These coexist with the existing string-bucket fields (e.g. gateScoreStr) and do not replace them.
+  jeeAdvancedRank?: number
+  gateScore?: number
+  gateScoreYear?: number
+  gateRank?: number
+  catPercentile?: number
+  reservationCategory?: ReservationCategory
+  homeState?: string
+
+  // Selected target institute id from the Domestic Admission Predictor.
+  targetInstituteId?: string
+
+  // Set true when the user is on the domestic/both track but has not entered any Indian-exam score.
+  domesticExamScoreMissing?: boolean
+
+  // Numeric family income in INR for the domestic loan engine and CSIS calculator.
+  // Coexists with the existing string-bucket field `familyIncomeStr`.
+  familyAnnualIncomeINR?: number
+
+  // Indian entrance exams selected during onboarding (Gemini-assisted picker).
+  // National + state-level Medical / Engineering exams with the student's
+  // marks and rank. Persisted via the content_interest jsonb codec.
+  entranceExams?: EntranceExamEntry[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Indian entrance exam picker (onboarding Step 5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type EntranceExamStream = 'Medical' | 'Engineering'
+
+/** "National" or a specific Indian state / union territory name. */
+export type EntranceExamRegion = string
+
+/** A single exam the student has appeared for, with their result. */
+export interface EntranceExamEntry {
+  /** Stable client-generated id used as the React key and for removal. */
+  id: string
+  stream: EntranceExamStream
+  /** 'National' or the state/UT name selected in the region dropdown. */
+  region: EntranceExamRegion
+  /** Exam short name, e.g. "JEE Main", "NEET UG", "MHT CET". */
+  examName: string
+  /** Free-text marks / score (e.g. percentile, raw marks). */
+  marks?: string
+  /** Free-text rank (e.g. AIR, category rank). */
+  rank?: string
+}
+
+/** One exam option returned by the Gemini-backed `/api/entrance-exams` route. */
+export interface EntranceExamOption {
+  name: string
+  fullName: string
+  conductingBody: string
+  level: 'National' | 'State'
+}
+
+/**
+ * A single college recommendation returned by the Gemini-backed
+ * `/api/domestic-colleges` route. Derived from the Indian exam(s) the student
+ * appeared for (national or state level), with a branch-wise cutoff for the
+ * student's reservation category and an admission-chance classification based
+ * on the rank / marks they entered during onboarding.
+ */
+export interface DomesticCollegeResult {
+  /** Stable id for React keys / selection (client- or route-generated). */
+  id: string
+  name: string
+  city: string
+  state: string
+  /** Branch / program, e.g. "Computer Science", "MBBS". */
+  branch: string
+  /** Institute category, e.g. "IIT", "NIT", "IIIT", "AIIMS", "Govt Medical". */
+  collegeType: string
+  /** Exam this recommendation is keyed to, e.g. "JEE Advanced", "NEET UG". */
+  examName: string
+  stream: EntranceExamStream
+  /** Human-readable closing cutoff for the student's category. */
+  cutoffLabel: string
+  /** Numeric closing cutoff value for the student's category (rank or percentile). */
+  closingRank: number | null
+  /**
+   * Whether `closingRank` is a rank (lower = more selective, e.g. JEE/NEET/most
+   * state CETs) or a percentile (higher = more selective, e.g. MHT CET).
+   */
+  cutoffType?: 'rank' | 'percentile'
+  /**
+   * National desirability / quality score in [0, 100] (higher = better college
+   * for this branch). This is comparable ACROSS exams (rank-based national
+   * exams and percentile-based state exams), so a combined list can be ranked
+   * by genuine college quality rather than by incomparable raw cutoffs.
+   */
+  qualityScore?: number
+  /** Human-readable annual fees. */
+  feesLabel: string
 }
 
 export interface University {
@@ -270,7 +371,6 @@ export type PageType =
   | 'career-navigator' 
   | 'roi-calculator' 
   | 'admission-predictor' 
-  | 'college-match'
   | 'loan-center' 
   | 'emi-calculator' 
   | 'sop-copilot' 
@@ -284,6 +384,7 @@ export type PageType =
   | 'living-cost'
   | 'news'
   | 'form-guide'
+  | 'loan-apply'
   | 'timeline'
   | 'interview-prep'
   | 'referrals'
@@ -308,6 +409,10 @@ export type PageType =
   | 'admin-kyc'
   | 'admin-users'
   | 'admin-experts'
+
+  // Domestic Track MVP
+  | 'domestic-admission-predictor'
+  | 'domestic-loan-center'
 
 // Loan Application types
 export type LoanAppStep = 'eligibility' | 'documents' | 'form' | 'tracking'
@@ -404,11 +509,7 @@ export interface DecisionEngineState {
     academicScore: number
     financialScore: number
     admissionReadinessScore: number
-    reasoning?: string
-    summary?: string
-    academicPoints?: string[]
-    financialPoints?: string[]
-    admissionPoints?: string[]
+    reasoning: string
   }
   
   // Phase 2
@@ -416,9 +517,8 @@ export interface DecisionEngineState {
     recommendedCountries: {
       countryName: string
       matchScore: number
-      whyRecommended: string | string[]
-      whyNotRecommended?: string
-      considerations?: string[]
+      whyRecommended: string
+      whyNotRecommended: string
       expectedCost: string
       postStudyWork: string
       jobMarket: number
@@ -439,7 +539,7 @@ export interface DecisionEngineState {
       livingCost: number
       roi: number
       scholarshipAvailability: string
-      whyRecommended: string | string[]
+      whyRecommended: string
     }[]
   }
   selectedUniversity?: string
@@ -447,8 +547,7 @@ export interface DecisionEngineState {
   // Phase 4
   admissionChance?: {
     currentChance: number
-    chanceBreakdown?: string
-    breakdownPoints?: string[]
+    chanceBreakdown: string
     positiveFactors: string[]
     negativeFactors: string[]
     missingRequirements: string[]
@@ -475,8 +574,7 @@ export interface DecisionEngineState {
     selfFundingCapacity: number
     savingsContribution: number
     familyContribution: number
-    reasoning?: string
-    reasoningPoints?: string[]
+    reasoning: string
   }
   
   // Phase 7
@@ -485,7 +583,6 @@ export interface DecisionEngineState {
     emi: number
     interest: number
     recommendedLenders: string[]
-    notes?: string[]
   }
   
   // Phase 8
@@ -522,4 +619,86 @@ export interface DecisionEngineState {
     day60Plan: string[]
     day90Plan: string[]
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Domestic Track MVP — shared types
+// Source of truth: .kiro/specs/domestic-track-mvp/design.md → "Data Models".
+// These are additive; nothing above this section was removed or renamed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type Track = 'abroad' | 'domestic' | 'both'
+
+export type ReservationCategory =
+  | 'General'
+  | 'OBC-NCL'
+  | 'EWS'
+  | 'SC'
+  | 'ST'
+  | 'PwD'
+
+export type ExamType = 'JEE_Advanced' | 'GATE' | 'CAT'
+
+export type ReachMatchSafetyBucket = 'Reach' | 'Match' | 'Safety' | 'Out_Of_Range'
+
+export interface DomesticUniversity {
+  id: string
+  name: string
+  location: string
+  examType: ExamType
+  /** Annual tuition in INR (positive integer). */
+  tuitionINR: number
+  /** Average domestic placement CTC in INR (positive integer). */
+  avgDomesticPlacementCtcINR: number
+  /** Non-negative integer seat counts per reservation category. */
+  seatMatrix: Record<ReservationCategory, number>
+  /**
+   * Closing thresholds per reservation category.
+   * For `JEE_Advanced` and `GATE` records this is the closing rank (positive integer).
+   * For `CAT` records this is the closing percentile in the inclusive range 0–100.
+   */
+  closingRanks: Record<ReservationCategory, number>
+  isNotifiedForCSIS: boolean
+}
+
+export interface DomesticLoanCriteria {
+  /** When true, target institute id must be in the premier institute list. */
+  premierInstituteRequired?: boolean
+  /** When true, the profile must have a co-applicant available. */
+  coApplicantRequired?: boolean
+  /** When true, the profile must have collateral available. */
+  collateralRequired?: boolean
+  /** Inclusive upper bound on familyAnnualIncomeINR for eligibility. */
+  maxFamilyAnnualIncomeINR?: number
+}
+
+export interface DomesticLoanProduct {
+  id: string
+  bankName: string
+  productName: string
+  interestRateMin: number
+  interestRateMax: number
+  maxLoanINR: number
+  moratoriumMonths: number
+  criteria: DomesticLoanCriteria
+  notes?: string
+}
+
+export type LoanEligibility =
+  | 'Eligible'
+  | 'Not_Eligible'
+  | 'Conditionally_Eligible'
+
+export interface IndianScholarship {
+  id: string
+  name: string
+  provider: string
+  amount: number
+  currency: 'INR'
+  country: 'India'
+  deadline: string
+  eligibility: string
+  matchScore: number
+  field: string
+  type: 'Merit' | 'Need' | 'Research' | 'Diversity'
 }

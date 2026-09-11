@@ -55,47 +55,22 @@ export default function ExpertDirectory() {
     if (!profile.id) return
 
     const existingSession = sessions.find(s => s.expert_id === expertId)
-
+    
     if (existingSession) {
-      // Already accepted -> open chat
       if (existingSession.status === 'active') {
         setCurrentPage('user-expert-chat')
-        return
-      }
-      // Still waiting on expert
-      if (existingSession.status === 'pending') {
+      } else {
         toast('Request is still pending', { icon: '⏳' })
-        return
       }
-      // Previously rejected (or cancelled) -> reopen by flipping status back to pending
-      if (existingSession.status === 'rejected' || existingSession.status === 'cancelled') {
-        const { data, error } = await supabase
-          .from('chat_sessions')
-          .update({ status: 'pending', updated_at: new Date().toISOString() })
-          .eq('id', existingSession.id)
-          .select()
-          .single()
-
-        if (error) {
-          toast.error('Failed to resend request: ' + error.message)
-        } else if (data) {
-          setSessions(prev => prev.map(s => (s.id === data.id ? data : s)))
-          toast.success('Connection request sent again!')
-        }
-        return
-      }
+      return
     }
 
-    // No prior session -> create a fresh one
-    const { data, error } = await supabase
-      .from('chat_sessions')
-      .insert({
-        student_id: profile.id,
-        expert_id: expertId,
-        status: 'pending',
-      })
-      .select()
-      .single()
+    // Create new session
+    const { data, error } = await supabase.from('chat_sessions').insert({
+      student_id: profile.id,
+      expert_id: expertId,
+      status: 'pending'
+    }).select().single()
 
     if (error) {
       toast.error('Failed to send request: ' + error.message)
@@ -214,7 +189,6 @@ export default function ExpertDirectory() {
                 const session = sessions.find(s => s.expert_id === expert.id)
                 const isPending = session?.status === 'pending'
                 const isActive = session?.status === 'active'
-                const isRejected = session?.status === 'rejected'
 
                 return (
                   <button 
@@ -225,8 +199,6 @@ export default function ExpertDirectory() {
                         ? 'bg-indigo-500 text-white hover:bg-indigo-600 shadow-lg shadow-indigo-500/20'
                         : isPending
                         ? 'bg-amber-500/20 text-amber-500 cursor-wait border border-amber-500/30'
-                        : isRejected
-                        ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30'
                         : isVerified 
                         ? 'bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/20' 
                         : 'bg-white/5 text-foreground-muted cursor-not-allowed'
@@ -238,8 +210,6 @@ export default function ExpertDirectory() {
                       <><MessageSquare className="w-4 h-4" /> Message</>
                     ) : isPending ? (
                       <><Clock className="w-4 h-4" /> Request Pending</>
-                    ) : isRejected ? (
-                      <>Request again</>
                     ) : (
                       <>Connect with {(expert.name || 'Expert').split(' ')[0]}</>
                     )}

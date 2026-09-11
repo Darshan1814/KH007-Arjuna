@@ -52,6 +52,13 @@ interface AppState {
   addEventLog: (event: string, metadata?: Record<string, any>) => void
 }
 
+// Domestic Track MVP (see .kiro/specs/domestic-track-mvp/design.md → "Defaults in defaultProfile"):
+// `track` is intentionally omitted — it's derived on read via `useTrack()` from `studyGoal`.
+// The other domestic-track fields (`jeeAdvancedRank`, `gateScore`, `gateScoreYear`, `gateRank`,
+// `catPercentile`, `reservationCategory`, `homeState`, `targetInstituteId`,
+// `domesticExamScoreMissing`, `familyAnnualIncomeINR`) are all optional on `StudentProfile`
+// and are likewise omitted; they remain `undefined` until the user fills them in onboarding.
+// They are persisted automatically because `partialize` below serializes the full `profile` object.
 const defaultProfile: StudentProfile = {
   name: '',
   email: '',

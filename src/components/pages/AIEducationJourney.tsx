@@ -4,9 +4,8 @@ import React, { useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useJourneyStore } from '@/lib/journeyStore'
 import { useAppStore } from '@/lib/store'
-import { Loader2, ArrowRight, RotateCcw, CheckCircle2, FileDown, FileText } from 'lucide-react'
+import { Loader2, ArrowRight, RotateCcw, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import DecisionEngine from '../AIEducationJourney/DecisionEngine'
-import { downloadHTMLReport, downloadPDFReport } from '@/lib/journeyReport'
 import type { DecisionPhase, DecisionEngineState } from '@/lib/types'
 
 const PHASE_ORDER: DecisionPhase[] = [
@@ -181,44 +180,29 @@ export default function AIEducationJourney() {
 
       {/* Sticky Bottom Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-background/90 backdrop-blur-md border-t border-border p-4 md:pl-64 z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
-          <div className="flex-1 min-w-0">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <div className="flex-1">
             {!isComplete && !isLoading && answeredPhases.length > 0 && (
-              <p className="text-sm text-foreground-muted truncate">
+              <p className="text-sm text-foreground-muted">
                 Next: <strong className="text-foreground">{currentPhase.replace(/PHASE_\d+_/, '').replace('_', ' ')}</strong>
               </p>
             )}
-            {isComplete && <p className="text-sm text-success font-bold flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Journey Complete — download your report</p>}
+            {isComplete && <p className="text-sm text-success font-bold flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Journey Complete</p>}
           </div>
 
-          {isComplete ? (
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={() => downloadPDFReport(profile, useJourneyStore.getState())}
-                className="btn-primary px-5 py-3 rounded-full flex items-center gap-2 shadow-lg"
-              >
-                <FileDown className="w-4 h-4" /> <span className="hidden sm:inline">Download</span> PDF
-              </button>
-              <button
-                onClick={() => downloadHTMLReport(profile, useJourneyStore.getState())}
-                className="btn-secondary px-5 py-3 rounded-full flex items-center gap-2"
-              >
-                <FileText className="w-4 h-4" /> <span className="hidden sm:inline">Download</span> HTML
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => handleNextPhase(currentPhase)}
-              disabled={disableNext}
-              className="btn-primary px-8 py-3 rounded-full flex items-center gap-2 shadow-lg hover:shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-            >
-              {isLoading ? (
-                <><Loader2 className="w-4 h-4 animate-spin"/> Processing...</>
-              ) : (
-                <>Ask AI <ArrowRight className="w-4 h-4"/></>
-              )}
-            </button>
-          )}
+          <button
+            onClick={() => handleNextPhase(currentPhase)}
+            disabled={disableNext}
+            className="btn-primary px-8 py-3 rounded-full flex items-center gap-2 shadow-lg hover:shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? (
+              <><Loader2 className="w-4 h-4 animate-spin"/> Processing...</>
+            ) : isComplete ? (
+              'Completed'
+            ) : (
+              <>Ask AI <ArrowRight className="w-4 h-4"/></>
+            )}
+          </button>
         </div>
       </div>
     </div>

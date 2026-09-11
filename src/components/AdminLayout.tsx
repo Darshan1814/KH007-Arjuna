@@ -10,7 +10,6 @@ import AdminAnalytics from './pages/admin/AdminAnalytics'
 import AdminKYC from './pages/admin/AdminKYC'
 import AdminUsers from './pages/admin/AdminUsers'
 import { createClient } from '@/lib/supabase/client'
-import { usePresence } from '@/lib/usePresence'
 
 const adminNavItems = [
   { id: 'admin-analytics', label: 'Platform Analytics', icon: BarChart3 },
@@ -21,21 +20,8 @@ const adminNavItems = [
 export default function AdminLayout() {
   const { currentPage, setCurrentPage, sidebarOpen, toggleSidebar, profile, setUser } = useAppStore()
 
-  // Keep profiles.status in sync with whether this admin tab is open.
-  usePresence(profile?.id)
-
   const handleLogout = async () => {
     const supabase = createClient()
-    if (profile?.id) {
-      try {
-        await fetch('/api/presence', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: profile.id, status: 'offline' }),
-          keepalive: true,
-        })
-      } catch {}
-    }
     await supabase.auth.signOut()
     setUser(null)
     setCurrentPage('landing')

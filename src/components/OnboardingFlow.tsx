@@ -1,17 +1,26 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
 import { createClient } from '@/lib/supabase/client'
 import {
   User, GraduationCap, Briefcase, Globe,
   BookOpen, Building, Wallet, FileText, Settings,
-  ChevronRight, ChevronLeft, Loader2, Sparkles, Check, LogOut, MapPin, Crosshair
+  ChevronRight, ChevronLeft, Loader2, Sparkles, Check, LogOut
 } from 'lucide-react'
 import { countries } from 'countries-list'
+import { usePlacesWidget } from 'react-google-autocomplete'
 import type { StudentProfile } from '@/lib/types'
 import { calculateDreamScore } from '@/lib/utils'
+import { useTrack } from '@/lib/useTrack'
+import { encodeContentInterest } from '@/lib/contentInterestCodec'
+import EntranceExamPicker from '@/components/EntranceExamPicker'
+import {
+  validateStep5,
+  computeDomesticExamScoreMissing,
+  type ReservationCategory,
+} from '@/lib/onboardingValidation'
 
 const STEPS = [
   { id: 1, title: 'Identity', icon: User },
@@ -64,179 +73,16 @@ const Input = ({ label, field, type = "text", placeholder = "", options = [] as 
   )
 }
 
-const GOOGLE_MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-
-// Single global loader so we never inject the script twice across renders.
-let googleMapsScriptPromise: Promise<void> | null = null
-const loadGoogleMapsScript = (key: string | undefined): Promise<void> => {
-  if (typeof window === 'undefined' || !key) return Promise.resolve()
-  if ((window as any).google?.maps?.places) return Promise.resolve()
-  if (googleMapsScriptPromise) return googleMapsScriptPromise
-
-  googleMapsScriptPromise = new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[data-google-maps="1"]')
-    if (existing) {
-      existing.addEventListener('load', () => resolve())
-      existing.addEventListener('error', () => reject(new Error('Google Maps script failed to load')))
-      return
-    }
-    const script = document.createElement('script')
-    script.src = `https://maps.googleapis.com/maps/api/js?libraries=places&key=${key}`
-    script.async = true
-    script.defer = true
-    script.dataset.googleMaps = '1'
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error('Google Maps script failed to load'))
-    document.head.appendChild(script)
-  })
-
-  return googleMapsScriptPromise
-}
-
-// Mount-safe replacement for `usePlacesWidget`. Loads the Google Maps script
-// once, attaches `Autocomplete` only after the input is in the DOM and the
-// component is still mounted, and tears down cleanly. Eliminates the
-// "Input ref must be HTMLInputElement" race that fires when the onboarding
-// step unmounts before the script resolves.
-function useGooglePlaces(onPlaceSelected: (place: any) => void) {
-  const inputRef = useRef<HTMLInputElement | null>(null)
-  const autocompleteRef = useRef<any>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    let listener: any = null
-
-    loadGoogleMapsScript(GOOGLE_MAPS_KEY)
-      .then(() => {
-        if (cancelled) return
-        const w = window as any
-        if (!w.google?.maps?.places) return
-        if (!(inputRef.current instanceof HTMLInputElement)) return
-
-        autocompleteRef.current = new w.google.maps.places.Autocomplete(inputRef.current, {
-          types: ['(cities)'],
-          fields: ['address_components', 'formatted_address', 'name', 'geometry'],
-        })
-        listener = autocompleteRef.current.addListener('place_changed', () => {
-          const place = autocompleteRef.current?.getPlace()
-          if (place) onPlaceSelectedRef.current(place)
-        })
-      })
-      .catch(() => {
-        // Silent fall-through: free-text input still works without autocomplete.
-      })
-
-    return () => {
-      cancelled = true
-      if (listener?.remove) listener.remove()
-      autocompleteRef.current = null
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Always read the latest callback without retriggering the effect.
-  const onPlaceSelectedRef = useRef(onPlaceSelected)
-  useEffect(() => {
-    onPlaceSelectedRef.current = onPlaceSelected
-  }, [onPlaceSelected])
-
-  return inputRef
-}
-
-// Extracts city + state from a Google place's address components.
-const parsePlace = (place: any): { city: string; state: string; label: string } => {
-  let city = ''
-  let state = ''
-  place?.address_components?.forEach((c: any) => {
-    if (c.types.includes('locality')) city = c.long_name
-    if (!city && c.types.includes('administrative_area_level_2')) city = c.long_name
-    if (c.types.includes('administrative_area_level_1')) state = c.long_name
-  })
-  const label = place?.formatted_address || place?.name || [city, state].filter(Boolean).join(', ')
-  return { city, state, label }
-}
-
-// Real Google Places autocomplete input. Shows live suggestions as the user
-// types (powered by usePlacesWidget) and supports an optional "use current
-// location" button that reverse-geocodes the device GPS coordinates.
-const PlacesAutocomplete = ({
-  label, field, placeholder, types = ['(cities)'], localData, updateLocal, onPlaceSelected, enableCurrentLocation = false,
-}: any) => {
-  const [locating, setLocating] = useState(false)
-  const [locError, setLocError] = useState('')
-
-  const handlePlace = useCallback((place: any) => {
-    onPlaceSelected?.(place)
-  }, [onPlaceSelected])
-
-  const ref = useGooglePlaces(handlePlace)
-
-  const useCurrentLocation = () => {
-    setLocError('')
-    if (!navigator.geolocation) {
-      setLocError('Geolocation is not supported on this device.')
-      return
-    }
-    setLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const { latitude, longitude } = pos.coords
-          const res = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_KEY}`
-          )
-          const data = await res.json()
-          const result = data.results?.[0]
-          if (result) {
-            onPlaceSelected?.(result)
-            if (ref.current) ref.current.value = result.formatted_address || ''
-          } else {
-            setLocError('Could not determine your location. Please type it instead.')
-          }
-        } catch {
-          setLocError('Could not fetch your location. Please type it instead.')
-        } finally {
-          setLocating(false)
-        }
-      },
-      () => {
-        setLocError('Location permission denied. Please type your city instead.')
-        setLocating(false)
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    )
-  }
-
+const SingleAutocomplete = ({ label, field, placeholder, types, localData, updateLocal, onPlaceSelected }: any) => {
   return (
     <div className="mb-4">
-      <label className="block text-sm font-medium text-foreground-secondary mb-1 flex items-center gap-1">
-        <MapPin className="w-3.5 h-3.5" /> {label}
-      </label>
-      <div className="flex gap-2">
-        <input
-          ref={ref as any}
-          className="input-field flex-1"
-          placeholder={placeholder}
-          defaultValue={localData[field] || ''}
-          onChange={(e) => updateLocal(field, e.target.value)}
-        />
-        {enableCurrentLocation && (
-          <button
-            type="button"
-            onClick={useCurrentLocation}
-            disabled={locating}
-            title="Use my current location"
-            className="btn-secondary px-3 flex items-center justify-center"
-          >
-            {locating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crosshair className="w-4 h-4" />}
-          </button>
-        )}
-      </div>
-      {localData[field] && !locError && (
-        <p className="text-xs text-success mt-1 flex items-center gap-1"><Check className="w-3 h-3" /> {localData[field]}</p>
-      )}
-      {locError && <p className="text-xs text-danger mt-1">{locError}</p>}
-      {!GOOGLE_MAPS_KEY && <p className="text-xs text-foreground-muted mt-1">Type your location (autocomplete unavailable)</p>}
+      <label className="block text-sm font-medium text-foreground-secondary mb-1">{label}</label>
+      <input
+        className="input-field"
+        placeholder={placeholder}
+        defaultValue={localData[field] || ''}
+        onBlur={(e) => updateLocal(field, e.target.value)}
+      />
     </div>
   )
 }
@@ -295,9 +141,11 @@ const MultiAutocomplete = ({ label, field, placeholder, localData, updateLocal }
 
 export default function OnboardingFlow() {
   const { profile, updateProfile, setOnboarded, setCurrentPage, user, setUser, targetOnboardingStep, setTargetOnboardingStep } = useAppStore()
+  const track = useTrack()
   const [currentStep, setCurrentStep] = useState(targetOnboardingStep || 1)
   const [loading, setLoading] = useState(false)
   const [localData, setLocalData] = useState<Partial<StudentProfile>>({ ...profile })
+  const [step5Errors, setStep5Errors] = useState<Record<string, string>>({})
 
   const supabase = createClient()
 
@@ -386,7 +234,20 @@ export default function OnboardingFlow() {
         
         preferred_language: profileData.preferredLanguage,
         notification_preference: profileData.notificationPreference,
-        content_interest: profileData.contentInterest || [],
+        content_interest: encodeContentInterest({
+          contentInterest: profileData.contentInterest,
+          track: profileData.track,
+          jeeAdvancedRank: profileData.jeeAdvancedRank,
+          gateScore: profileData.gateScore,
+          gateScoreYear: profileData.gateScoreYear,
+          gateRank: profileData.gateRank,
+          catPercentile: profileData.catPercentile,
+          reservationCategory: profileData.reservationCategory,
+          homeState: profileData.homeState,
+          targetInstituteId: profileData.targetInstituteId,
+          domesticExamScoreMissing: profileData.domesticExamScoreMissing,
+          entranceExams: profileData.entranceExams,
+        }),
         hear_about_us: profileData.hearAboutUs,
         referral_code: profileData.referralCode,
         is_onboarded: isFinal ? true : !!profileData.isOnboarded
@@ -404,6 +265,32 @@ export default function OnboardingFlow() {
   }
 
   const handleNext = () => {
+    if (currentStep === 5) {
+      const result = validateStep5({
+        jeeAdvancedRank: localData.jeeAdvancedRank,
+        gateRank: localData.gateRank,
+        gateScore: localData.gateScore,
+        gateScoreYear: localData.gateScoreYear,
+        catPercentile: localData.catPercentile,
+        reservationCategory: localData.reservationCategory,
+        homeState: localData.homeState,
+      })
+      if (!result.ok) {
+        setStep5Errors(result.errors)
+        return
+      }
+      setStep5Errors({})
+      const flag = computeDomesticExamScoreMissing(track, {
+        jeeAdvancedRank: localData.jeeAdvancedRank,
+        gateScore: localData.gateScore,
+        catPercentile: localData.catPercentile,
+      })
+      updateLocal('domesticExamScoreMissing', flag)
+      syncToDatabase({ ...localData, domesticExamScoreMissing: flag }, false)
+      if (currentStep < 9) setCurrentStep(s => s + 1)
+      else finishOnboarding()
+      return
+    }
     syncToDatabase(localData, false)
     if (currentStep < 9) {
       setCurrentStep(s => s + 1)
@@ -426,16 +313,6 @@ export default function OnboardingFlow() {
   const handleLogout = async () => {
     setLoading(true)
     const supabase = createClient()
-    if (user?.id) {
-      try {
-        await fetch('/api/presence', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user.id, status: 'offline' }),
-          keepalive: true,
-        })
-      } catch {}
-    }
     await supabase.auth.signOut()
     setUser(null)
     setCurrentPage('landing')
@@ -477,18 +354,22 @@ export default function OnboardingFlow() {
             {boundInput({ label: "Date of Birth", field: "dob", type: "date" })}
             {boundInput({ label: "Gender", field: "gender", options: ['Male', 'Female', 'Other'] })}
             
-            <PlacesAutocomplete
+            <SingleAutocomplete
               label="City / Location"
               field="city"
               placeholder="Search your city..."
               types={['(cities)']}
-              enableCurrentLocation
               localData={localData}
               updateLocal={updateLocal}
               onPlaceSelected={(place: any) => {
-                const { city, state, label } = parsePlace(place)
-                updateLocal('city', city || label)
-                if (state) updateLocal('state', state)
+                let city = ''
+                let state = ''
+                place.address_components?.forEach((c: any) => {
+                  if (c.types.includes('locality')) city = c.long_name
+                  if (c.types.includes('administrative_area_level_1')) state = c.long_name
+                })
+                updateLocal('city', city || place.name)
+                updateLocal('state', state)
               }}
             />
             
@@ -505,7 +386,7 @@ export default function OnboardingFlow() {
             </div>
             {boundInput({ label: "12th Stream", field: "twelfthStream", options: ['Science', 'Commerce', 'Arts'] })}
             
-            <PlacesAutocomplete
+            <SingleAutocomplete
               label="Undergraduate College"
               field="undergradCollege"
               placeholder="Search your college or university..."
@@ -513,7 +394,7 @@ export default function OnboardingFlow() {
               localData={localData}
               updateLocal={updateLocal}
               onPlaceSelected={(place: any) => {
-                updateLocal('undergradCollege', place.name || place.formatted_address || '')
+                updateLocal('undergradCollege', place.name || '')
               }}
             />
 
@@ -614,6 +495,52 @@ export default function OnboardingFlow() {
             {localData.toeflStatus === 'Appeared' && boundInput({ label: "TOEFL Score", field: "toeflScore" })}
             
             {boundInput({ label: "Next Planned Exam Date", field: "examNextDate", type: "date" })}
+
+            {(track === 'domestic' || track === 'both') && (
+              <div className="mt-6 pt-6 border-t border-border space-y-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <BookOpen className="w-5 h-5" /> Indian Exams (Domestic Track)
+                </h3>
+
+                <EntranceExamPicker
+                  value={localData.entranceExams || []}
+                  onChange={(next) => updateLocal('entranceExams', next)}
+                />
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-foreground-secondary mb-1">Reservation Category</label>
+                  <select
+                    className="input-field"
+                    value={localData.reservationCategory ?? ''}
+                    onChange={(e) => updateLocal('reservationCategory', e.target.value === '' ? undefined : (e.target.value as ReservationCategory))}
+                  >
+                    <option value="">Select...</option>
+                    <option value="General">General</option>
+                    <option value="OBC-NCL">OBC-NCL</option>
+                    <option value="EWS">EWS</option>
+                    <option value="SC">SC</option>
+                    <option value="ST">ST</option>
+                    <option value="PwD">PwD</option>
+                  </select>
+                  {step5Errors.reservationCategory && (
+                    <p className="text-danger text-xs mt-1">{step5Errors.reservationCategory}</p>
+                  )}
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-foreground-secondary mb-1">Home State</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={localData.homeState ?? ''}
+                    onChange={(e) => updateLocal('homeState', e.target.value)}
+                  />
+                  {step5Errors.homeState && (
+                    <p className="text-danger text-xs mt-1">{step5Errors.homeState}</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )
       case 6:

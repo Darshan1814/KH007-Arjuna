@@ -10,6 +10,7 @@ import AdminLayout from '@/components/AdminLayout'
 import AuthPage from '@/components/AuthPage'
 import { createClient } from '@/lib/supabase/client'
 import { useNetworkStore } from '@/lib/networkStore'
+import { decodeContentInterest } from '@/lib/contentInterestCodec'
 import { Loader2 } from 'lucide-react'
 
 export default function Home() {
@@ -25,6 +26,10 @@ export default function Home() {
         setIsInitializing(true)
         const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle()
         if (data && !error) {
+          // Decode the content_interest jsonb column. Accepts both the legacy
+          // `string[]` shape and the new `{ v: 2, tags, domesticMeta }` payload
+          // (see src/lib/contentInterestCodec.ts and design.md "Persistence Mapping").
+          const { contentInterest, domesticMeta } = decodeContentInterest(data.content_interest)
           // Map snake_case to camelCase
           updateProfile({
             id: data.id,
@@ -95,7 +100,7 @@ export default function Home() {
             docVisa: data.doc_visa || '',
             preferredLanguage: data.preferred_language || '',
             notificationPreference: data.notification_preference || '',
-            contentInterest: data.content_interest || [],
+            contentInterest,
             hearAboutUs: data.hear_about_us || '',
             referralCode: data.referral_code || '',
             isOnboarded: data.is_onboarded || false,
@@ -112,7 +117,13 @@ export default function Home() {
             rating: data.rating,
             studentsHelped: data.students_helped,
             sessionRate: data.session_rate,
-            earningsThisMonth: data.earnings_this_month
+            earningsThisMonth: data.earnings_this_month,
+
+            // Domestic Track MVP fields decoded from content_interest.domesticMeta.
+            // Spread last so any future renames in the codec flow through without
+            // a manual mapping table here. Per design.md "Persistence Mapping",
+            // domesticMeta keys are already camelCase and align 1:1 with StudentProfile.
+            ...domesticMeta,
           })
           setOnboarded(data.is_onboarded || false)
         }

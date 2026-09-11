@@ -18,11 +18,7 @@ export default function ExpertKYC() {
   // Realtime Sync for Admin Approvals
   useEffect(() => {
     if (!profile.id || profile.id === 'mock-agent-id') return
-
-    // Track the last KYC status we showed a toast for so unrelated UPDATEs
-    // (presence pings, profile edits, etc.) don't keep firing the same toast.
-    const lastNotifiedRef = { current: profile.kycStatus }
-
+    
     const channel = supabase.channel('schema-db-changes')
       .on(
         'postgres_changes',
@@ -37,21 +33,10 @@ export default function ExpertKYC() {
             expertSpecializations: newData.expert_specializations,
             expertCountries: newData.expert_countries
           })
-
-          // Only toast when kyc_status actually changes, otherwise every
-          // presence/heartbeat UPDATE re-fires the same celebration.
-          if (newData.kyc_status !== lastNotifiedRef.current) {
-            if (newData.kyc_status === 'verified') {
-              toast.success('Your KYC Application was just approved by an Admin!', {
-                icon: '🎉',
-                id: 'kyc-status',
-              })
-            } else if (newData.kyc_status === 'rejected') {
-              toast.error('Your KYC Application was rejected. Please review.', {
-                id: 'kyc-status',
-              })
-            }
-            lastNotifiedRef.current = newData.kyc_status
+          if (newData.kyc_status === 'verified') {
+            toast.success('Your KYC Application was just approved by an Admin!', { icon: '🎉' })
+          } else if (newData.kyc_status === 'rejected') {
+            toast.error('Your KYC Application was rejected. Please review.')
           }
         }
       )
