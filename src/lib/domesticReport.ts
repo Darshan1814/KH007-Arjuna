@@ -56,7 +56,7 @@ function computeAdmissionProb(profile: StudentProfile, college: DomesticCollegeR
   if (!match) return 50
 
   const isPercentile = college.cutoffType === 'percentile'
-  const studentNum = Number(match.rank || match.marks || match.percentile || 0)
+  const studentNum = Number(match.rank || match.marks || (match as { percentile?: number | string }).percentile || 0)
   if (!studentNum) return 50
 
   if (isPercentile) {

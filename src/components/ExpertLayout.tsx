@@ -128,7 +128,7 @@ export default function ExpertLayout() {
         <main className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar relative z-10" id="main-scroll-container">
           <div className="h-full relative">
             <div className={currentPage === 'expert-home' || currentPage === 'dashboard' ? 'block h-full' : 'hidden'}><ExpertHome /></div>
-            <div className={currentPage === 'expert-requests' ? 'block h-full' : 'hidden'}><ExpertRequests /></div>
+            <div className={(currentPage as string) === 'expert-requests' ? 'block h-full' : 'hidden'}><ExpertRequests /></div>
             <div className={currentPage === 'expert-students' ? 'block h-full' : 'hidden'}><ExpertStudents /></div>
             <div className={currentPage === 'expert-chat' ? 'block h-full' : 'hidden'}><ExpertChat /></div>
             <div className={currentPage === 'expert-kyc' ? 'block h-full' : 'hidden'}><ExpertKYC /></div>
