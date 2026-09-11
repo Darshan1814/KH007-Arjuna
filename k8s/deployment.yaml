@@ -26,7 +26,10 @@ spec:
       containers:
         - name: gradpilot
           image: darshan11111/gradpilot:latest
-          imagePullPolicy: Always
+          # IfNotPresent works both for local kind (image is loaded via
+          # `kind load docker-image`) and for production with a registry
+          # (Jenkins always pushes a unique tag, so Kubernetes pulls it).
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
               name: http
