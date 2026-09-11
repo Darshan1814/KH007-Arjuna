@@ -216,7 +216,7 @@ export default function DashboardLayout() {
         <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
           {navSections.map(section => (
             <div key={section.label} className="space-y-1">
-              <div className="px-3 text-[10px] font-bold text-white/20 uppercase tracking-widest">{section.label}</div>
+              <div className="px-3 text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--foreground-muted)', opacity: 0.5 }}>{section.label}</div>
               {section.items.map(item => (
                 <button key={item.page} onClick={() => { setCurrentPage(item.page); if (window.innerWidth < 768) toggleSidebar() }}
                   className={`sidebar-link w-full ${currentPage === item.page ? 'active' : ''}`}>
