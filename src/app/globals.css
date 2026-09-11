@@ -151,6 +151,8 @@ body {
 @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 5px rgba(99, 102, 241, 0.3); } 50% { box-shadow: 0 0 30px rgba(99, 102, 241, 0.5); } }
 @keyframes gradient-shift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
 @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+@keyframes ring-draw { from { stroke-dashoffset: var(--ring-circumference); } to { stroke-dashoffset: var(--ring-offset); } }
+@keyframes gate-float { 0%, 100% { transform: translateY(0) scale(1); opacity: 0.08; } 50% { transform: translateY(-15px) scale(1.05); opacity: 0.14; } }
 
 .animate-fade-in { animation: fadeIn 0.6s ease-out forwards; }
 .animate-slide-left { animation: slideInLeft 0.6s ease-out forwards; }
@@ -158,6 +160,8 @@ body {
 .animate-float { animation: float 3s ease-in-out infinite; }
 .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
 .animate-gradient { background-size: 200% 200%; animation: gradient-shift 3s ease infinite; }
+.animate-ring-draw { animation: ring-draw 1.5s ease-out forwards; }
+.animate-gate-float { animation: gate-float 4s ease-in-out infinite; }
 
 /* ===== Background Effects ===== */
 .bg-grid { background-image: linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px); background-size: 60px 60px; }

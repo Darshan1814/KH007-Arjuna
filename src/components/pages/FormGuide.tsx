@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import Autocomplete from 'react-google-autocomplete'
 import {
   ClipboardList, Search, CheckCircle, Circle, ChevronDown, ChevronUp,
   Loader2, BookOpen, FileText, GraduationCap, DollarSign, Globe,
@@ -217,7 +218,7 @@ export default function FormGuide() {
     : 0
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-6xl space-y-6">
       {/* Header */}
       <div>
         <h2 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--foreground)' }}>
@@ -234,7 +235,18 @@ export default function FormGuide() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
             <label className="text-sm font-medium block mb-1" style={{ color: 'var(--foreground)' }}>University Name</label>
-            <input
+            <Autocomplete
+              apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+              onPlaceSelected={(place) => {
+                if (place?.name) setUniversityName(place.name)
+                // Extract country automatically
+                const countryObj = place?.address_components?.find((c: any) => c.types.includes('country'))
+                if (countryObj?.long_name) {
+                  setSelectedCountry(countryObj.long_name)
+                  setCountrySearch('')
+                }
+              }}
+              options={{ types: ['establishment'] }}
               className="input-field"
               placeholder="e.g. Stanford University"
               defaultValue={universityName}

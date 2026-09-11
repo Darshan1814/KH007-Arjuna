@@ -32,7 +32,7 @@ const requiredDocs = [
   'Aadhaar Card', 'Bank Statement', 'SOP'
 ]
 
-export default function DocumentVault() {
+export default function DocumentVault({ embedded = false }: { embedded?: boolean } = {}) {
   const { addXP, addBadge, addNotification } = useAppStore()
   const [docs, setDocs] = useState<VaultDoc[]>([])
   const [uploading, setUploading] = useState(false)
@@ -97,21 +97,23 @@ export default function DocumentVault() {
 
   return (
     <div className="max-w-6xl space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--foreground)' }}>
-            <Shield className="w-6 h-6" style={{ color: 'var(--primary)' }} />
-            Document Vault
-          </h2>
-          <p className="mt-1" style={{ color: 'var(--foreground-secondary)' }}>Secure, AI-powered document management and auto-fill.</p>
-        </div>
-        <div className="flex gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--foreground-muted)]" />
-            <input className="input-field pl-10 w-64" placeholder="Search documents..." value={search} onChange={e => setSearch(e.target.value)} />
+      {!embedded && (
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h2 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--foreground)' }}>
+              <Shield className="w-6 h-6" style={{ color: 'var(--primary)' }} />
+              Document Vault
+            </h2>
+            <p className="mt-1" style={{ color: 'var(--foreground-secondary)' }}>Secure, AI-powered document management and auto-fill.</p>
+          </div>
+          <div className="flex gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--foreground-muted)]" />
+              <input className="input-field pl-10 w-64" placeholder="Search documents..." value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Sidebar: Status & Upload */}

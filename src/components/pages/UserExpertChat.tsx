@@ -3,496 +3,246 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
-  Send, Paperclip, Mic, Video, Phone, Check, CheckCheck, 
-  FileText, ArrowLeft, Bot, Loader2, UserSquare2, StopCircle
+  Send, Paperclip, Mic, Video, MoreVertical, Check, CheckCheck, 
+  FileText, ArrowLeft, Bot, Sparkles, ChevronDown, ChevronUp
 } from 'lucide-react'
+import { useNetworkStore } from '@/lib/networkStore'
 import { useAppStore } from '@/lib/store'
-import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
-import VideoCallModal from '@/components/VideoCallModal'
-
-type CallState = 'idle' | 'calling' | 'incoming' | 'connected'
+import { ExpertMessage } from '@/lib/types'
 
 export default function UserExpertChat() {
   const { profile, setCurrentPage } = useAppStore()
-  const supabase = createClient()
+  const { allUsers, chatSessions, messages, sendMessage, markChatAsRead } = useNetworkStore()
   
-  const [sessions, setSessions] = useState<any[]>([])
-  const [activeSession, setActiveSession] = useState<any>(null)
-  const [messages, setMessages] = useState<any[]>([])
   const [inputText, setInputText] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [sending, setSending] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  
-  // Call States
-  const [callState, setCallState] = useState<CallState>('idle')
-  const [isAudioOnly, setIsAudioOnly] = useState(false)
-  const [webRTCSignal, setWebRTCSignal] = useState<any>(null)
-  
-  // Voice Note States
-  const [isRecording, setIsRecording] = useState(false)
-  const [recordingTime, setRecordingTime] = useState(0)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
-  const timerRef = useRef<any>(null)
-  
+  const [isTyping, setIsTyping] = useState(false)
+  const [showSummary, setShowSummary] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Update own last_seen presence
-  useEffect(() => {
-    if (profile?.id) {
-      supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', profile.id).then()
-    }
-  }, [profile?.id, inputText])
-
-  // 1. Fetch active sessions
-  useEffect(() => {
-    if (!profile.id) return
-
-    const fetchSessions = async () => {
-      setLoading(true)
-      const roleColumn = profile.role === 'expert' ? 'expert_id' : 'student_id'
-      const otherRole = profile.role === 'expert' ? 'student' : 'expert'
-      
-      const { data, error } = await supabase
-        .from('chat_sessions')
-        .select(`
-          id, status, created_at,
-          other_user:profiles!chat_sessions_${otherRole}_id_fkey(*)
-        `)
-        .eq(roleColumn, profile.id)
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-
-      if (data && data.length > 0) {
-        setSessions(data)
-        if (!activeSession) setActiveSession(data[0])
-      }
-      setLoading(false)
-    }
-
-    fetchSessions()
-  }, [profile.id])
-
-  // 2. Fetch messages & subscribe to realtime
-  useEffect(() => {
-    if (!activeSession) return
-
-    const fetchMessages = async () => {
-      const { data } = await supabase
-        .from('chat_messages')
-        .select('*')
-        .eq('session_id', activeSession.id)
-        .order('created_at', { ascending: true })
-      
-      if (data) {
-        // Process signals that might have been missed if page was refreshed
-        const signals = data.filter(m => m.document_name === 'call_signal')
-        if (signals.length > 0) {
-          const lastSignal = signals[signals.length - 1]
-          if (lastSignal.sender_id !== profile.id && new Date(lastSignal.created_at).getTime() > Date.now() - 60000) {
-            try {
-              const sigData = JSON.parse(lastSignal.content)
-              if (sigData.type === 'OFFER') {
-                setIsAudioOnly(sigData.audioOnly)
-                setCallState('incoming')
-                setWebRTCSignal(sigData)
-              } else if (sigData.type === 'ACCEPT') {
-                setCallState('connected')
-                setWebRTCSignal(sigData)
-              }
-            } catch (e) {}
-          }
-        }
-        
-        setMessages(data.filter(m => m.document_name !== 'call_signal'))
-      }
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
-    }
-
-    fetchMessages()
-
-    const channel = supabase.channel(`chat_${activeSession.id}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'chat_messages',
-        filter: `session_id=eq.${activeSession.id}`
-      }, (payload) => {
-        const newMsg = payload.new
-        
-        // Handle Call Signals encoded in messages
-        if (newMsg.document_name === 'call_signal' && newMsg.sender_id !== profile.id) {
-          try {
-            const signal = JSON.parse(newMsg.content)
-            if (signal.type === 'OFFER') {
-              setIsAudioOnly(signal.audioOnly)
-              setCallState('incoming')
-              setWebRTCSignal(signal)
-            } else if (signal.type === 'ACCEPT') {
-              setCallState('connected')
-              setWebRTCSignal(signal)
-            } else if (signal.type === 'DECLINE' || signal.type === 'END') {
-              setCallState('idle')
-              setWebRTCSignal(null)
-            } else if (signal.type === 'SDP' || signal.type === 'ICE') {
-              setWebRTCSignal(signal)
-            }
-          } catch (e) {}
-          return // Do not add signal messages to the UI state
-        }
-
-        // Only add normal messages to UI
-        if (newMsg.document_name !== 'call_signal') {
-          setMessages(prev => [...prev, newMsg])
-          setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
-        }
-      })
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [activeSession])
-
-  // Broadcast Call Signals via DB Inserts
-  const sendSignal = async (signalData: any) => {
-    await supabase.from('chat_messages').insert({
-      session_id: activeSession.id,
-      sender_id: profile.id,
-      document_name: 'call_signal',
-      content: JSON.stringify(signalData)
-    })
-  }
-
-  const handleStartCall = async (audioOnly: boolean) => {
-    setIsAudioOnly(audioOnly)
-    setCallState('calling')
-    await sendSignal({ type: 'OFFER', audioOnly })
-  }
-
-  const handleAcceptCall = async () => {
-    setCallState('connected')
-    await sendSignal({ type: 'ACCEPT' })
-  }
-
-  const handleEndCall = async () => {
-    setCallState('idle')
-    await sendSignal({ type: 'END' })
-  }
-
-  const handleDeclineCall = async () => {
-    setCallState('idle')
-    await sendSignal({ type: 'DECLINE' })
-  }
-
-  // Voice Notes
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      mediaRecorderRef.current = new MediaRecorder(stream)
-      audioChunksRef.current = []
-      
-      mediaRecorderRef.current.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data)
-      }
-      
-      mediaRecorderRef.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        stream.getTracks().forEach(t => t.stop())
-        await uploadVoiceNote(audioBlob)
-      }
-      
-      mediaRecorderRef.current.start()
-      setIsRecording(true)
-      setRecordingTime(0)
-      timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000)
-    } catch (err) {
-      toast.error('Microphone access denied')
-    }
-  }
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop()
-      setIsRecording(false)
-      clearInterval(timerRef.current)
-    }
-  }
-
-  const uploadVoiceNote = async (blob: Blob) => {
-    setUploading(true)
-    const fileName = `voice_${Date.now()}.webm`
-    const filePath = `${activeSession.id}/${fileName}`
-    
-    try {
-      const { error } = await supabase.storage.from('chat_attachments').upload(filePath, blob)
-      if (error) throw error
-      
-      const { data: { publicUrl } } = supabase.storage.from('chat_attachments').getPublicUrl(filePath)
-      
-      await supabase.from('chat_messages').insert({
-        session_id: activeSession.id,
-        sender_id: profile.id,
-        content: '🎤 Voice message',
-        document_url: publicUrl,
-        document_name: 'audio' // Identifier for audio rendering
-      })
-    } catch (err) {
-      toast.error('Failed to send voice note')
-    }
-    setUploading(false)
-  }
-
-  // File Upload
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !activeSession) return
-
-    setUploading(true)
-    const fileExt = file.name.split('.').pop()
-    const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`
-    const filePath = `${activeSession.id}/${fileName}`
-
-    try {
-      const { error: uploadError } = await supabase.storage.from('chat_attachments').upload(filePath, file)
-      if (uploadError) throw uploadError
-
-      const { data: { publicUrl } } = supabase.storage.from('chat_attachments').getPublicUrl(filePath)
-      await supabase.from('chat_messages').insert({
-        session_id: activeSession.id,
-        sender_id: profile.id,
-        content: `Shared a document: ${file.name}`,
-        document_url: publicUrl,
-        document_name: file.name
-      })
-      toast.success('Document shared')
-    } catch (err: any) {
-      toast.error('Failed to upload document')
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  const handleSend = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    if (!inputText.trim() || !activeSession || sending) return
-
-    setSending(true)
-    await supabase.from('chat_messages').insert({
-      session_id: activeSession.id,
-      sender_id: profile.id,
-      content: inputText.trim()
-    })
-    setInputText('')
-    setSending(false)
-  }
-
-  const handleSendProfileInfo = async () => {
-    if (!activeSession || sending) return
-    setSending(true)
-    const profileData = `
-📊 **Student Profile Summary**
-- **Target Degree:** ${profile.targetDegree || 'Not specified'}
-- **Target Countries:** ${(profile.targetCountry || []).join(', ') || 'Not specified'}
-- **Current Stage:** ${profile.journeyStage || 'Exploring'}
-- **Budget:** ₹${profile.budgetLakhs || 0} Lakhs
-- **Loan Eligible:** ${profile.loanEligible ? 'Yes' : 'No'}
-- **Academic Score:** ${profile.cgpa ? profile.cgpa + ' CGPA' : 'N/A'}
-    `.trim()
-    await supabase.from('chat_messages').insert({ session_id: activeSession.id, sender_id: profile.id, content: profileData })
-    toast.success('Profile info sent!')
-    setSending(false)
-  }
-
-  if (loading) return <div className="flex-1 flex items-center justify-center bg-[#0b141a]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
-
-  const formatTime = (isoString: string) => new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  // Find active chat for this user
+  const activeChat = chatSessions.find(c => c.studentId === profile.id || c.studentId === 'current-user')
+  const expert = allUsers.find(u => u.id === activeChat?.expertId)
   
-  const getPresenceText = (lastSeen: string | undefined) => {
-    if (!lastSeen) return 'Offline'
-    const diff = Date.now() - new Date(lastSeen).getTime()
-    if (diff < 5 * 60 * 1000) return 'Online'
-    return `Last seen ${new Date(lastSeen).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+  const chatMessages = messages.filter(m => m.chatId === activeChat?.id).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (activeChat) {
+      const hasUnread = chatMessages.some(m => m.senderRole === 'expert' && !m.isRead)
+      if (hasUnread) {
+        markChatAsRead(activeChat.id, profile.id || 'current-user')
+      }
+    }
+  }, [chatMessages, activeChat, markChatAsRead, profile.id])
+
+  // Mock AI Suggestions
+  const lastMessage = chatMessages[chatMessages.length - 1]
+  const showSuggestions = lastMessage?.senderRole === 'expert'
+  const aiSuggestions = [
+    "Could you review my SOP draft?",
+    "What's the best time to apply for the visa?",
+    "Do I need to show liquid funds for I-20?"
+  ]
+
+  const handleSend = (content: string, type: 'text' | 'document' = 'text', url?: string) => {
+    if (!content.trim() && type === 'text') return
+    if (!activeChat) return
+
+    const msg: Omit<ExpertMessage, 'id' | 'timestamp' | 'isRead'> = {
+      chatId: activeChat.id,
+      senderId: profile.id || 'current-user',
+      senderRole: 'student',
+      content,
+    }
+
+    if (type === 'document' && url) {
+      msg.attachments = [{ type: 'document', url, name: content }]
+      msg.content = 'Shared a document'
+    }
+
+    sendMessage(msg)
+    setInputText('')
+
+    // Mock expert typing & reply
+    setIsTyping(true)
+    setTimeout(() => {
+      setIsTyping(false)
+      sendMessage({
+        chatId: activeChat.id,
+        senderId: expert!.id!,
+        senderRole: 'expert',
+        content: "I've received your message. Let me look into your profile and get back to you shortly!"
+      })
+    }, 2500)
+  }
+
+  const handleDocumentUpload = () => {
+    // Simulate document upload
+    handleSend('SOP_Draft_v2.pdf', 'document', '#')
+    toast.success('Document shared')
+  }
+
+  if (!activeChat || !expert) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] text-center">
+        <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4">
+          <Bot className="w-8 h-8 text-foreground-muted" />
+        </div>
+        <h3 className="text-xl font-bold text-foreground">No Active Chats</h3>
+        <p className="text-foreground-secondary mt-2 mb-6">Find an expert in the directory to start a conversation.</p>
+        <button onClick={() => setCurrentPage('expert-directory')} className="btn-primary">
+          Browse Experts
+        </button>
+      </div>
+    )
+  }
+
+  const formatTime = (isoString: string) => {
+    return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] max-w-5xl mx-auto rounded-2xl overflow-hidden shadow-2xl border border-border bg-background">
-      
-      {/* Sidebar - Chat List */}
-      <div className="w-80 border-r border-border bg-[#111b21] flex flex-col hidden md:flex">
-        <div className="p-4 bg-[#202c33] text-gray-200 font-bold text-lg flex items-center gap-3 border-b border-white/5">
-          <button onClick={() => setCurrentPage('dashboard')} className="p-1 hover:bg-white/10 rounded-full text-gray-300">
+    <div className="flex flex-col h-[calc(100vh-8rem)] max-w-4xl mx-auto rounded-2xl overflow-hidden shadow-2xl border border-border" style={{ background: '#0b141a' }}>
+      {/* Chat Header */}
+      <div className="flex items-center justify-between p-3" style={{ background: '#202c33' }}>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setCurrentPage('expert-directory')} className="p-2 hover:bg-white/10 rounded-full text-gray-300">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          My Chats
-        </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
-          {sessions.length === 0 ? (
-            <div className="p-4 text-center text-gray-500 text-sm mt-4">
-              No active chats. 
-              <br/><br/>
-              <button onClick={() => setCurrentPage('expert-directory')} className="px-4 py-2 rounded-lg bg-indigo-500/20 text-indigo-400 font-bold hover:bg-indigo-500/30">
-                Find an Expert
-              </button>
+          <img src={expert.avatar || `https://ui-avatars.com/api/?name=${expert.name}`} alt={expert.name} className="w-10 h-10 rounded-full" />
+          <div>
+            <div className="font-semibold text-gray-100">{expert.name}</div>
+            <div className="text-xs text-gray-400">
+              {isTyping ? <span className="text-emerald-500 font-medium">typing...</span> : 'Usually replies in 2 hrs'}
             </div>
-          ) : sessions.map(chat => {
-            const otherUser = chat.other_user || { name: 'User' }
-            const isActive = activeSession?.id === chat.id
-            const presence = getPresenceText(otherUser.last_seen)
-            
-            return (
-              <button key={chat.id} onClick={() => setActiveSession(chat)}
-                className={`w-full flex items-center gap-3 p-3 border-b border-[#202c33] hover:bg-[#202c33] transition-colors ${isActive ? 'bg-[#2a3942]' : ''}`}>
-                <img src={otherUser.avatar_url || `https://ui-avatars.com/api/?name=${otherUser.name}`} className="w-12 h-12 rounded-full border border-white/10" alt="" />
-                <div className="flex-1 min-w-0 text-left">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-semibold text-gray-200 truncate">{otherUser.name || 'Unnamed User'}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className={`text-xs truncate w-4/5 font-medium flex items-center gap-1 ${presence === 'Online' ? 'text-emerald-500' : 'text-gray-500'}`}>
-                      {presence === 'Online' && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />} {presence}
-                    </span>
-                  </div>
-                </div>
-              </button>
-            )
-          })}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="p-2 hover:bg-white/10 rounded-full text-gray-300 transition-colors" title="Video Call">
+            <Video className="w-5 h-5" />
+          </button>
+          <button className="p-2 hover:bg-white/10 rounded-full text-gray-300 transition-colors">
+            <MoreVertical className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
-      {/* Main Chat Area */}
-      {activeSession ? (
-        <div className="flex-1 flex flex-col relative" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundSize: 'cover', backgroundBlendMode: 'overlay', backgroundColor: 'rgba(11,20,26,0.95)' }}>
-          
-          <div className="flex items-center justify-between p-3 bg-[#202c33]">
-            <div className="flex items-center gap-3">
-              <button onClick={() => setCurrentPage('dashboard')} className="md:hidden p-2 hover:bg-white/10 rounded-full text-gray-300">
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <img src={activeSession.other_user?.avatar_url || `https://ui-avatars.com/api/?name=${activeSession.other_user?.name}`} alt="" className="w-10 h-10 rounded-full border border-white/10" />
-              <div>
-                <div className="font-semibold text-gray-100">{activeSession.other_user?.name || 'User'}</div>
-                <div className={`text-xs font-medium ${getPresenceText(activeSession.other_user?.last_seen) === 'Online' ? 'text-emerald-500' : 'text-gray-400'}`}>
-                  {getPresenceText(activeSession.other_user?.last_seen)}
-                </div>
-              </div>
+      {/* AI Summary Banner (every 10 msgs mock) */}
+      {chatMessages.length > 0 && (
+        <div className="mx-auto mt-2 w-[90%] z-10">
+          <button onClick={() => setShowSummary(!showSummary)} 
+            className="w-full flex items-center justify-between p-2 px-4 rounded-lg bg-indigo-500/10 border border-indigo-500/20 backdrop-blur-md">
+            <div className="flex items-center gap-2 text-indigo-300 text-xs font-medium">
+              <Sparkles className="w-3.5 h-3.5" /> AI Conversation Summary
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={handleSendProfileInfo} disabled={sending} className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 text-xs font-bold transition-colors border border-indigo-500/30">
-                <UserSquare2 className="w-4 h-4" /> Send My Info
-              </button>
-              <button onClick={() => handleStartCall(false)} className="p-2 hover:bg-white/10 rounded-full text-gray-300 transition-colors">
-                <Video className="w-5 h-5" />
-              </button>
-              <button onClick={() => handleStartCall(true)} className="p-2 hover:bg-white/10 rounded-full text-gray-300 transition-colors">
-                <Phone className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <VideoCallModal 
-            callState={callState} 
-            onAccept={handleAcceptCall} 
-            onDecline={handleDeclineCall}
-            onEnd={handleEndCall}
-            userName={activeSession.other_user?.name || 'Expert'}
-            isAudioOnly={isAudioOnly}
-            isCaller={callState === 'calling'}
-            sendWebRTCSignal={sendSignal}
-            webRTCSignal={webRTCSignal}
-          />
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-            {messages.length === 0 && (
-              <div className="text-center p-4 bg-white/5 rounded-lg text-sm text-gray-300 max-w-xs mx-auto border border-white/10">
-                This is the start of your secure chat. Messages and documents are end-to-end encrypted.
-              </div>
+            {showSummary ? <ChevronUp className="w-3.5 h-3.5 text-indigo-300" /> : <ChevronDown className="w-3.5 h-3.5 text-indigo-300" />}
+          </button>
+          <AnimatePresence>
+            {showSummary && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                className="bg-indigo-500/5 border-x border-b border-indigo-500/20 rounded-b-lg p-3 text-xs text-indigo-200/80 leading-relaxed">
+                You and {expert.name} discussed your target universities in the US. The expert suggested preparing your SOP before month-end to meet early deadlines. Waiting on your SOP draft.
+              </motion.div>
             )}
-            
-            {messages.map((msg, i) => {
-              const isMine = msg.sender_id === profile.id
-              
-              return (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                  key={msg.id} 
-                  className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div className={`max-w-[85%] sm:max-w-[70%] rounded-lg p-2 px-3 shadow-sm relative group ${
-                    isMine ? 'bg-[#005c4b] text-[#e9edef]' : 'bg-[#202c33] text-[#e9edef]'
-                  }`} style={{ borderTopRightRadius: isMine ? '0' : '0.5rem', borderTopLeftRadius: !isMine ? '0' : '0.5rem' }}>
-                    
-                    {msg.document_url && msg.document_name === 'audio' ? (
-                      <div className="mb-2">
-                        <audio controls className="h-10 w-full max-w-[250px] outline-none">
-                          <source src={msg.document_url} type="audio/webm" />
-                        </audio>
-                      </div>
-                    ) : msg.document_url ? (
-                      <a href={msg.document_url} target="_blank" rel="noopener noreferrer" 
-                         className="flex items-center gap-3 bg-black/20 p-2 rounded-md mb-2 hover:bg-black/40 transition-colors border border-white/5">
-                        <div className="p-2 bg-red-500/20 rounded text-red-400"><FileText className="w-5 h-5" /></div>
-                        <div className="text-sm truncate pr-4">{msg.document_name}</div>
-                      </a>
-                    ) : null}
-                    
-                    <div className="text-[14.5px] leading-relaxed whitespace-pre-wrap font-sans">{msg.content}</div>
-                    
-                    <div className="flex items-center justify-end gap-1 mt-1 -mr-1">
-                      <span className="text-[10px] text-white/50">{formatTime(msg.created_at)}</span>
-                      {isMine && (msg.is_read ? <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" /> : <Check className="w-3.5 h-3.5 text-white/50" />)}
-                    </div>
-                  </div>
-                </motion.div>
-              )
-            })}
-            <div ref={messagesEndRef} />
-          </div>
-
-          <form onSubmit={handleSend} className="p-3 flex items-center gap-2 bg-[#202c33]">
-            <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
-            <button type="button" disabled={uploading || isRecording} onClick={() => fileInputRef.current?.click()} className="p-3 text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-full transition-colors disabled:opacity-50">
-              {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
-            </button>
-            <div className="flex-1 bg-[#2a3942] rounded-xl flex items-center px-4 py-2 border border-white/5 overflow-hidden">
-              {isRecording ? (
-                <div className="flex-1 flex items-center gap-3 text-red-400 animate-pulse font-medium">
-                  <Mic className="w-5 h-5" /> Recording... {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
-                </div>
-              ) : (
-                <input
-                  type="text"
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  placeholder="Type a message..."
-                  className="w-full bg-transparent outline-none text-gray-100 placeholder-gray-400 text-[15px]"
-                />
-              )}
-            </div>
-            {inputText.trim() ? (
-              <button type="submit" disabled={sending} className="p-3 bg-[#00a884] text-white rounded-full hover:bg-[#008f6f] transition-colors shadow-lg">
-                {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 -ml-1" />}
-              </button>
-            ) : isRecording ? (
-              <button type="button" onClick={stopRecording} className="p-3 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20">
-                <StopCircle className="w-5 h-5" />
-              </button>
-            ) : (
-              <button type="button" onClick={startRecording} className="p-3 text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-full transition-colors">
-                <Mic className="w-5 h-5" />
-              </button>
-            )}
-          </form>
-        </div>
-      ) : (
-        <div className="flex-1 flex flex-col items-center justify-center bg-[#0b141a] text-gray-400">
-          <Bot className="w-12 h-12 mb-4 opacity-20" />
-          <p>Select a chat from the sidebar to start messaging.</p>
+          </AnimatePresence>
         </div>
       )}
+
+      {/* Chat Area */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundSize: 'cover', backgroundBlendMode: 'overlay', backgroundColor: 'rgba(11,20,26,0.9)' }}>
+        
+        <div className="text-center my-4">
+          <span className="bg-[#182229] text-gray-400 text-[11px] px-3 py-1 rounded-lg uppercase tracking-wide">
+            Today
+          </span>
+        </div>
+
+        {chatMessages.map((msg, i) => {
+          const isMine = msg.senderRole === 'student'
+          const isSystem = msg.senderRole === 'system'
+
+          if (isSystem) {
+            return (
+              <div key={msg.id} className="text-center my-4">
+                <span className="bg-[#182229] text-gray-400 text-[11px] px-3 py-1 rounded-lg italic">
+                  {msg.content}
+                </span>
+              </div>
+            )
+          }
+
+          return (
+            <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[85%] sm:max-w-[70%] rounded-lg p-2 px-3 shadow-sm relative group ${
+                isMine ? 'bg-[#005c4b] text-[#e9edef]' : 'bg-[#202c33] text-[#e9edef]'
+              }`} style={{ borderTopRightRadius: isMine ? '0' : '0.5rem', borderTopLeftRadius: !isMine ? '0' : '0.5rem' }}>
+                
+                {msg.attachments?.map((att, idx) => (
+                  <div key={idx} className="flex items-center gap-3 bg-black/20 p-2 rounded-md mb-2 cursor-pointer hover:bg-black/30">
+                    <div className="p-2 bg-red-500/20 rounded text-red-400"><FileText className="w-5 h-5" /></div>
+                    <div className="text-sm truncate pr-4">{att.name}</div>
+                  </div>
+                ))}
+                
+                <div className="text-[14.5px] leading-relaxed break-words">{msg.content}</div>
+                
+                <div className="flex items-center justify-end gap-1 mt-1 -mr-1">
+                  <span className="text-[10px] text-white/50">{formatTime(msg.timestamp)}</span>
+                  {isMine && (
+                    msg.isRead ? <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" /> : <Check className="w-3.5 h-3.5 text-white/50" />
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+
+        {/* AI Suggested Replies */}
+        {showSuggestions && !isTyping && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="pt-2">
+            <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-indigo-400 mb-2 pl-1">
+              <Sparkles className="w-3 h-3" /> AI Suggested Replies
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {aiSuggestions.map((sug, i) => (
+                <button key={i} onClick={() => setInputText(sug)}
+                  className="text-xs px-3 py-1.5 rounded-full bg-[#182229] border border-indigo-500/30 text-indigo-200 hover:bg-indigo-500/20 transition-colors">
+                  {sug}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input Area */}
+      <div className="p-3 flex items-center gap-2" style={{ background: '#202c33' }}>
+        <button onClick={handleDocumentUpload} className="p-2 text-gray-400 hover:text-gray-200 transition-colors" title="Attach Document">
+          <Paperclip className="w-5 h-5" />
+        </button>
+        <div className="flex-1 bg-[#2a3942] rounded-lg flex items-center px-3">
+          <input
+            type="text"
+            className="w-full bg-transparent border-none text-[#e9edef] placeholder-gray-400 text-[15px] focus:ring-0 py-2.5"
+            placeholder="Type a message"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSend(inputText)}
+          />
+        </div>
+        {inputText.trim() ? (
+          <button onClick={() => handleSend(inputText)} className="p-2.5 bg-[#00a884] rounded-full text-white hover:bg-[#008f6f] transition-colors">
+            <Send className="w-5 h-5 ml-0.5" />
+          </button>
+        ) : (
+          <button className="p-2.5 text-gray-400 hover:text-gray-200 transition-colors" title="Voice Note">
+            <Mic className="w-5 h-5" />
+          </button>
+        )}
+      </div>
     </div>
   )
 }

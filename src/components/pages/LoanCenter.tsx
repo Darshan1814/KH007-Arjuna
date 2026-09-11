@@ -117,7 +117,7 @@ const realNBFCs = [
   },
 ]
 
-export default function LoanCenter() {
+export default function LoanCenter({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAppStore()
 
   const evaluatedNBFCs = useMemo(() => {
@@ -164,15 +164,17 @@ export default function LoanCenter() {
 
   return (
     <div className="max-w-6xl space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--foreground)' }}>
-          <DollarSign className="w-6 h-6" style={{ color: 'var(--accent)' }} />
-          Education Loan Center
-        </h2>
-        <p className="mt-1" style={{ color: 'var(--foreground-secondary)' }}>
-          Real eligibility across {realNBFCs.length} NBFCs with actual interest rates, links, and application portals.
-        </p>
-      </div>
+      {!embedded && (
+        <div>
+          <h2 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--foreground)' }}>
+            <DollarSign className="w-6 h-6" style={{ color: 'var(--accent)' }} />
+            Education Loan Center
+          </h2>
+          <p className="mt-1" style={{ color: 'var(--foreground-secondary)' }}>
+            Real eligibility across {realNBFCs.length} NBFCs with actual interest rates, links, and application portals.
+          </p>
+        </div>
+      )}
 
       {/* Profile Summary */}
       <div className="card" style={{ background: 'rgba(99,102,241,0.05)', borderColor: 'rgba(99,102,241,0.15)' }}>

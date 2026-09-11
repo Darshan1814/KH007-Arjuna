@@ -8,7 +8,7 @@ import { formatINR, calculateEMI } from '@/lib/utils'
 import { TrendingUp, DollarSign, Calendar, ArrowUpRight } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts'
 
-export default function ROICalculator() {
+export default function ROICalculator({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAppStore()
   const [selectedUni, setSelectedUni] = useState(universities[4]) // Georgia Tech default
   const [loanAmount, setLoanAmount] = useState(45)
@@ -55,15 +55,17 @@ export default function ROICalculator() {
 
   return (
     <div className="max-w-6xl space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-          <TrendingUp className="w-6 h-6" style={{ color: 'var(--success)' }} />
-          ROI Calculator
-        </h2>
-        <p className="mt-1" style={{ color: 'var(--foreground-secondary)' }}>
-          Is your education investment worth it? See the 10-year financial picture in INR.
-        </p>
-      </div>
+      {!embedded && (
+        <div>
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <TrendingUp className="w-6 h-6" style={{ color: 'var(--success)' }} />
+            ROI Calculator
+          </h2>
+          <p className="mt-1" style={{ color: 'var(--foreground-secondary)' }}>
+            Is your education investment worth it? See the 10-year financial picture in INR.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Controls */}

@@ -36,7 +36,7 @@ function loadTimeline(): TimelineData | null {
   try { return JSON.parse(localStorage.getItem(TIMELINE_KEY) || 'null') } catch { return null }
 }
 
-export default function TimelinePage() {
+export default function TimelinePage({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile, addXP } = useAppStore()
   const [timeline, setTimeline] = useState<TimelineData | null>(loadTimeline)
   const [loading, setLoading] = useState(false)
@@ -124,15 +124,17 @@ Generate 15-20 milestones spread across all phases. Make descriptions specific a
 
   return (
     <div className="max-w-5xl space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--foreground)' }}>
-          <Calendar className="w-6 h-6" style={{ color: 'var(--primary)' }} />
-          Application Timeline
-        </h2>
-        <p className="mt-1" style={{ color: 'var(--foreground-secondary)' }}>
-          AI-generated personalized week-by-week plan for your study abroad journey.
-        </p>
-      </div>
+      {!embedded && (
+        <div>
+          <h2 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--foreground)' }}>
+            <Calendar className="w-6 h-6" style={{ color: 'var(--primary)' }} />
+            Application Timeline
+          </h2>
+          <p className="mt-1" style={{ color: 'var(--foreground-secondary)' }}>
+            AI-generated personalized week-by-week plan for your study abroad journey.
+          </p>
+        </div>
+      )}
 
       {!timeline ? (
         <div className="card text-center py-12">

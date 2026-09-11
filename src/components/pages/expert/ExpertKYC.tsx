@@ -213,7 +213,6 @@ export default function ExpertKYC() {
                   setFormData({...formData, bio: e.target.value})
                   updateProfile({ bio: e.target.value })
                 }}
-                disabled={kycStatus === 'pending'}
               />
             </div>
             
@@ -229,7 +228,6 @@ export default function ExpertKYC() {
                   setFormData({...formData, linkedinUrl: e.target.value})
                   updateProfile({ linkedinUrl: e.target.value })
                 }}
-                disabled={kycStatus === 'pending'}
               />
             </div>
 
@@ -241,7 +239,6 @@ export default function ExpertKYC() {
                     <label key={spec} className="flex items-center gap-3 cursor-pointer group">
                       <input 
                         type="checkbox" 
-                        disabled={kycStatus === 'pending'}
                         className="w-4 h-4 rounded border-gray-600 bg-black/20 text-primary focus:ring-primary"
                         checked={formData.specializations.includes(spec)}
                         onChange={() => handleCheckboxChange('specializations', spec)}
@@ -259,7 +256,6 @@ export default function ExpertKYC() {
                     <label key={country} className="flex items-center gap-3 cursor-pointer group">
                       <input 
                         type="checkbox" 
-                        disabled={kycStatus === 'pending'}
                         className="w-4 h-4 rounded border-gray-600 bg-black/20 text-primary focus:ring-primary"
                         checked={formData.countries.includes(country)}
                         onChange={() => handleCheckboxChange('countries', country)}
@@ -284,7 +280,7 @@ export default function ExpertKYC() {
                 { id: 'experience', label: 'Experience Proof / Offer Letter' },
                 { id: 'photo', label: 'Professional Photo (Avatar)' },
               ].map(doc => (
-                <div key={doc.id} className={`border border-dashed border-border rounded-xl p-4 transition-colors bg-black/10 ${kycStatus !== 'pending' ? 'hover:border-primary/50' : ''}`}>
+                <div key={doc.id} className="border border-dashed border-border rounded-xl p-4 transition-colors bg-black/10 hover:border-primary/50">
                   <label className="flex flex-col items-center justify-center cursor-pointer h-24">
                     <Upload className="w-6 h-6 text-foreground-muted mb-2" />
                     <span className="text-sm font-medium text-foreground text-center">{doc.label}</span>
@@ -292,7 +288,6 @@ export default function ExpertKYC() {
                     <input 
                       type="file" 
                       className="hidden" 
-                      disabled={kycStatus === 'pending'}
                       onChange={(e) => {
                         if (e.target.files?.[0]) {
                           setDocs({...docs, [doc.id]: e.target.files[0]})
@@ -315,11 +310,10 @@ export default function ExpertKYC() {
             <button 
               type="submit" 
               className="btn-primary flex items-center gap-2"
-              disabled={kycStatus === 'pending' || loading}
+              disabled={loading}
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {kycStatus === 'pending' ? 'Application Under Review' : 
-               kycStatus === 'rejected' ? 'Resubmit KYC Application' : 'Submit to Admin'}
+              {kycStatus === 'rejected' ? 'Resubmit KYC Application' : 'Submit to Admin'}
             </button>
           </div>
 

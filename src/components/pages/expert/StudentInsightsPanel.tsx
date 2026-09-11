@@ -109,7 +109,7 @@ export default function StudentInsightsPanel({ student, onClose }: StudentInsigh
   // Filter out empty cards
   const cgpa = student.cgpa || student.undergradCgpa
   const gre = student.greScore || student.gmatScore
-  const budget = student.budgetLakhs && student.budgetLakhs !== '0' ? student.budgetLakhs : null
+  const budget = student.budgetLakhs && student.budgetLakhs !== 0 ? student.budgetLakhs + ' Lakhs' : null
   const program = student.targetProgram
   const destinations = student.targetCountry && student.targetCountry.length > 0 ? student.targetCountry : null
 

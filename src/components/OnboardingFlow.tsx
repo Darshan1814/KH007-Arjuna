@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
 import { createClient } from '@/lib/supabase/client'
@@ -10,7 +10,7 @@ import {
   ChevronRight, ChevronLeft, Loader2, Sparkles, Check, LogOut
 } from 'lucide-react'
 import { countries } from 'countries-list'
-import { usePlacesWidget } from 'react-google-autocomplete'
+import Autocomplete from 'react-google-autocomplete'
 import type { StudentProfile } from '@/lib/types'
 import { calculateDreamScore } from '@/lib/utils'
 
@@ -65,20 +65,6 @@ const Input = ({ label, field, type = "text", placeholder = "", options = [] as 
   )
 }
 
-const SingleAutocomplete = ({ label, field, placeholder, types, localData, updateLocal, onPlaceSelected }: any) => {
-  return (
-    <div className="mb-4">
-      <label className="block text-sm font-medium text-foreground-secondary mb-1">{label}</label>
-      <input
-        className="input-field"
-        placeholder={placeholder}
-        defaultValue={localData[field] || ''}
-        onBlur={(e) => updateLocal(field, e.target.value)}
-      />
-    </div>
-  )
-}
-
 const MultiAutocomplete = ({ label, field, placeholder, localData, updateLocal }: any) => {
   const list: string[] = localData[field as keyof StudentProfile] as string[] || []
   const inputId = `multi-auto-${field}`
@@ -94,23 +80,41 @@ const MultiAutocomplete = ({ label, field, placeholder, localData, updateLocal }
     updateLocal(field, list.filter(i => i !== item))
   }
 
-
   return (
     <div className="mb-4">
       <label className="block text-sm font-medium text-foreground-secondary mb-1">{label}</label>
-        <input
-          id={inputId}
-          type="text"
-          className="input-field"
-          placeholder={placeholder}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              handleAdd((e.target as HTMLInputElement).value)
-              ;(e.target as HTMLInputElement).value = ''
+      <Autocomplete
+        id={inputId}
+        apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+        onPlaceSelected={(place) => {
+          if (place.name) {
+            handleAdd(place.name)
+            setTimeout(() => {
+              const el = document.getElementById(inputId) as HTMLInputElement
+              if (el) el.value = ''
+            }, 10)
+          }
+        }}
+        options={{ types: ['establishment'] }}
+        className="input-field"
+        placeholder={placeholder}
+        onKeyDown={(e: any) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            handleAdd(e.target.value)
+            e.target.value = ''
+          }
+        }}
+        onBlur={(e: any) => {
+          // Allow click events on dropdown to fire before blur clears it
+          setTimeout(() => {
+            if (e.target && e.target.value && e.target.value.trim() !== '') {
+              handleAdd(e.target.value.trim())
+              e.target.value = ''
             }
-          }}
-        />
+          }, 200)
+        }}
+      />
       {list.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-2">
           {list.map(item => (
@@ -132,14 +136,117 @@ const MultiAutocomplete = ({ label, field, placeholder, localData, updateLocal }
 }
 
 export default function OnboardingFlow() {
-  const { profile, updateProfile, setOnboarded, setCurrentPage, user, setUser } = useAppStore()
-  const [currentStep, setCurrentStep] = useState(1)
+  const { profile, updateProfile, setOnboarded, setCurrentPage, user, setUser, targetOnboardingStep, setTargetOnboardingStep } = useAppStore()
+  const [currentStep, setCurrentStep] = useState(targetOnboardingStep || 1)
   const [loading, setLoading] = useState(false)
   const [localData, setLocalData] = useState<Partial<StudentProfile>>({ ...profile })
 
   const supabase = createClient()
 
+  useEffect(() => {
+    if (targetOnboardingStep) {
+      setTargetOnboardingStep(null)
+    }
+  }, [targetOnboardingStep, setTargetOnboardingStep])
+
+  const syncToDatabase = async (profileData: Partial<StudentProfile>, isFinal = false) => {
+    if (!user) return
+    try {
+      const dbPayload = {
+        name: profileData.name,
+        mobile: profileData.mobile,
+        dob: profileData.dob || null,
+        gender: profileData.gender,
+        city: profileData.city,
+        state: profileData.state,
+        education_level: profileData.educationLevel,
+        
+        tenth_marks: profileData.tenthMarks,
+        twelfth_marks: profileData.twelfthMarks,
+        twelfth_stream: profileData.twelfthStream,
+        undergrad_college: profileData.undergradCollege,
+        undergrad_degree: profileData.undergradDegree,
+        undergrad_specialization: profileData.undergradSpecialization,
+        undergrad_cgpa: profileData.undergradCgpa,
+        undergrad_grad_year: profileData.undergradGradYear,
+        backlogs: profileData.hasBacklogs,
+        research_papers: profileData.hasResearchPapers,
+        internships: profileData.internshipsCount,
+        extracurriculars: profileData.extracurricularRoles,
+        
+        is_working_professional: profileData.isWorkingProfessional,
+        company_name: profileData.companyName,
+        industry: profileData.industry,
+        job_role: profileData.jobRole,
+        years_experience: profileData.yearsExperience,
+        current_ctc: profileData.currentCtc,
+        career_gap: profileData.careerGap,
+        
+        study_goal: profileData.studyGoal,
+        target_countries: profileData.targetCountries || [],
+        target_degree: profileData.targetDegree,
+        target_field: profileData.targetField,
+        intake_target: profileData.intakeTarget,
+        application_stage: profileData.applicationStage,
+        
+        gre_status: profileData.greStatus,
+        gre_score: profileData.greScoreStr,
+        gmat_status: profileData.gmatStatus,
+        gmat_score: profileData.gmatScoreStr,
+        ielts_status: profileData.ieltsStatus,
+        ielts_score: profileData.ieltsScore?.toString() || '',
+        toefl_status: profileData.toeflStatus,
+        toefl_score: profileData.toeflScore?.toString() || '',
+        gate_status: profileData.gateStatus,
+        gate_score: profileData.gateScoreStr,
+        cat_status: profileData.catStatus,
+        cat_score: profileData.catScoreStr,
+        neet_status: profileData.neetStatus,
+        exam_next_date: profileData.examNextDate || null,
+        
+        dream_universities: profileData.dreamUniversities || [],
+        target_universities: profileData.targetUniversitiesList || [],
+        safe_universities: profileData.safeUniversities || [],
+        preference_factors: profileData.preferenceFactors || [],
+        university_research_stage: profileData.universityResearchStage,
+        
+        funding_source: profileData.fundingSource,
+        expected_budget: profileData.expectedBudgetStr,
+        loan_estimate: profileData.loanEstimateStr,
+        collateral_available: profileData.collateralAvailableStr,
+        family_income: profileData.familyIncomeStr,
+        co_applicant: profileData.coApplicantStr,
+        credit_score: profileData.creditScoreStr,
+        
+        doc_passport: profileData.docPassport,
+        doc_transcripts: profileData.docTranscripts,
+        doc_lors: profileData.docLors,
+        doc_sop: profileData.docSop,
+        doc_resume: profileData.docResume,
+        doc_bank_statements: profileData.docBankStatements,
+        doc_visa: profileData.docVisa,
+        
+        preferred_language: profileData.preferredLanguage,
+        notification_preference: profileData.notificationPreference,
+        content_interest: profileData.contentInterest || [],
+        hear_about_us: profileData.hearAboutUs,
+        referral_code: profileData.referralCode,
+        is_onboarded: isFinal ? true : !!profileData.isOnboarded
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(dbPayload)
+        .eq('id', user.id)
+
+      if (error) console.error("Supabase Save Error:", error)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   const handleNext = () => {
+    syncToDatabase(localData, false)
     if (currentStep < 9) {
       setCurrentStep(s => s + 1)
     } else {
@@ -148,11 +255,13 @@ export default function OnboardingFlow() {
   }
 
   const handleSkip = () => {
+    syncToDatabase(localData, false)
     if (currentStep < 9) setCurrentStep(s => s + 1)
     else finishOnboarding()
   }
 
   const handlePrev = () => {
+    syncToDatabase(localData, false)
     if (currentStep > 1) setCurrentStep(s => s - 1)
   }
 
@@ -167,6 +276,7 @@ export default function OnboardingFlow() {
 
   const updateLocal = (field: keyof StudentProfile, value: any) => {
     setLocalData(prev => ({ ...prev, [field]: value }))
+    updateProfile({ [field]: value })
   }
 
   const finishOnboarding = async () => {
@@ -176,76 +286,8 @@ export default function OnboardingFlow() {
     const dreamScore = calculateDreamScore(localData as StudentProfile)
     const updatedProfile = { ...localData, dreamScore, isOnboarded: true }
     
-    try {
-      if (user) {
-        const dbPayload = {
-          name: updatedProfile.name,
-          mobile: updatedProfile.mobile,
-          dob: updatedProfile.dob,
-          gender: updatedProfile.gender,
-          city: updatedProfile.city,
-          state: updatedProfile.state,
-          education_level: updatedProfile.educationLevel,
-          
-          tenth_marks: updatedProfile.tenthMarks,
-          twelfth_marks: updatedProfile.twelfthMarks,
-          twelfth_stream: updatedProfile.twelfthStream,
-          undergrad_college: updatedProfile.undergradCollege,
-          undergrad_degree: updatedProfile.undergradDegree,
-          undergrad_specialization: updatedProfile.undergradSpecialization,
-          undergrad_cgpa: updatedProfile.undergradCgpa,
-          undergrad_grad_year: updatedProfile.undergradGradYear,
-          backlogs: updatedProfile.hasBacklogs,
-          research_papers: updatedProfile.hasResearchPapers,
-          internships: updatedProfile.internshipsCount,
-          extracurriculars: updatedProfile.extracurricularRoles,
-          
-          is_working_professional: updatedProfile.isWorkingProfessional,
-          company_name: updatedProfile.companyName,
-          industry: updatedProfile.industry,
-          job_role: updatedProfile.jobRole,
-          years_experience: updatedProfile.yearsExperience,
-          current_ctc: updatedProfile.currentCtc,
-          career_gap: updatedProfile.careerGap,
-          
-          study_goal: updatedProfile.studyGoal,
-          target_countries: updatedProfile.targetCountries,
-          target_degree: updatedProfile.targetDegree,
-          target_field: updatedProfile.targetField,
-          intake_target: updatedProfile.intakeTarget,
-          application_stage: updatedProfile.applicationStage,
-          
-          gre_status: updatedProfile.greStatus,
-          gmat_status: updatedProfile.gmatStatus,
-          ielts_status: updatedProfile.ieltsStatus,
-          toefl_status: updatedProfile.toeflStatus,
-          gate_status: updatedProfile.gateStatus,
-          
-          dream_universities: updatedProfile.dreamUniversities,
-          target_universities: updatedProfile.targetUniversitiesList,
-          safe_universities: updatedProfile.safeUniversities,
-          preference_factors: updatedProfile.preferenceFactors,
-          university_research_stage: updatedProfile.universityResearchStage,
-          
-          funding_source: updatedProfile.fundingSource,
-          
-          doc_passport: updatedProfile.docPassport,
-          
-          preferred_language: updatedProfile.preferredLanguage,
-          is_onboarded: true
-        }
-
-        const { error } = await supabase
-          .from('profiles')
-          .update(dbPayload)
-          .eq('id', user.id)
-
-        if (error) console.error("Supabase Save Error:", error)
-      }
-    } catch (e) {
-      console.error(e)
-    }
-
+    await syncToDatabase(updatedProfile, true)
+    
     updateProfile(updatedProfile)
     setOnboarded(true)
     setCurrentPage('dashboard')
@@ -267,24 +309,26 @@ export default function OnboardingFlow() {
             {boundInput({ label: "Date of Birth", field: "dob", type: "date" })}
             {boundInput({ label: "Gender", field: "gender", options: ['Male', 'Female', 'Other'] })}
             
-            <SingleAutocomplete
-              label="City / Location"
-              field="city"
-              placeholder="Search your city..."
-              types={['(cities)']}
-              localData={localData}
-              updateLocal={updateLocal}
-              onPlaceSelected={(place: any) => {
-                let city = ''
-                let state = ''
-                place.address_components?.forEach((c: any) => {
-                  if (c.types.includes('locality')) city = c.long_name
-                  if (c.types.includes('administrative_area_level_1')) state = c.long_name
-                })
-                updateLocal('city', city || place.name)
-                updateLocal('state', state)
-              }}
-            />
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-foreground-secondary mb-1">City / Location</label>
+              <Autocomplete
+                apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+                onPlaceSelected={(place) => {
+                  let city = ''
+                  let state = ''
+                  place.address_components?.forEach((c: any) => {
+                    if (c.types.includes('locality')) city = c.long_name
+                    if (c.types.includes('administrative_area_level_1')) state = c.long_name
+                  })
+                  updateLocal('city', city || place.name)
+                  updateLocal('state', state)
+                }}
+                options={{ types: ['(cities)'] }}
+                className="input-field"
+                placeholder="Search your city..."
+                defaultValue={localData.city || ''}
+              />
+            </div>
             
             {boundInput({ label: "Current Education Level", field: "educationLevel", options: ['Undergraduate', 'Graduate', 'Working Professional'] })}
           </div>
@@ -299,17 +343,22 @@ export default function OnboardingFlow() {
             </div>
             {boundInput({ label: "12th Stream", field: "twelfthStream", options: ['Science', 'Commerce', 'Arts'] })}
             
-            <SingleAutocomplete
-              label="Undergraduate College"
-              field="undergradCollege"
-              placeholder="Search your college or university..."
-              types={['establishment']}
-              localData={localData}
-              updateLocal={updateLocal}
-              onPlaceSelected={(place: any) => {
-                updateLocal('undergradCollege', place.name || '')
-              }}
-            />
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-foreground-secondary mb-1">Undergraduate College</label>
+              <Autocomplete
+                apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+                onPlaceSelected={(place) => {
+                  updateLocal('undergradCollege', place.name || '')
+                }}
+                onChange={(e: any) => {
+                  updateLocal('undergradCollege', e.target.value)
+                }}
+                options={{ types: ['establishment'] }}
+                className="input-field"
+                placeholder="Search your college or university..."
+                defaultValue={localData.undergradCollege || ''}
+              />
+            </div>
 
             {boundInput({ 
               label: "Degree (e.g. B.Tech)", 

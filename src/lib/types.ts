@@ -94,11 +94,14 @@ export interface StudentProfile {
   targetCountries?: string[]
   targetDegree?: string
   targetField?: string
+  intakeTarget?: string
   applicationStage?: string
   
   // Step 5
   greStatus?: string
+  greScoreStr?: string
   gmatStatus?: string
+  gmatScoreStr?: string
   ieltsStatus?: string
   toeflStatus?: string
   gateStatus?: string
@@ -113,6 +116,7 @@ export interface StudentProfile {
   targetUniversitiesList?: string[]
   safeUniversities?: string[]
   preferenceFactors?: string[]
+  topPreferenceFactor?: string
   universityResearchStage?: string
   
   // Step 7
@@ -139,6 +143,8 @@ export interface StudentProfile {
   contentInterest?: string[]
   hearAboutUs?: string
   referralCode?: string
+  isOnboarded?: boolean
+  created_at?: string
 }
 
 export interface University {
@@ -272,6 +278,7 @@ export type PageType =
   | 'scholarship-hunter'
   | 'professor-match'
   | 'clone-journey'
+  | 'ai-journey'
   | 'currency-risk'
   | 'living-cost'
   | 'news'
@@ -373,7 +380,138 @@ export interface EventLog {
   userId: string
   event: string
   metadata: Record<string, any>
-  timestamp: string
+  timestamp: string}
+
+export type DecisionPhase = 
+  | 'PHASE_1_PROFILE'
+  | 'PHASE_2_COUNTRY'
+  | 'PHASE_3_UNIVERSITY'
+  | 'PHASE_4_ADMISSION'
+  | 'PHASE_5_COST'
+  | 'PHASE_6_AFFORDABILITY'
+  | 'PHASE_7_LOAN'
+  | 'PHASE_8_DOCUMENTS'
+  | 'PHASE_9_DOC_ACQUISITION'
+  | 'PHASE_10_REVIEWS'
+  | 'PHASE_11_ROADMAP'
+
+export interface DecisionEngineState {
+  currentPhase: DecisionPhase
+  answeredPhases: DecisionPhase[]
+  
+  // Phase 1
+  profileAnalysis?: {
+    academicScore: number
+    financialScore: number
+    admissionReadinessScore: number
+    reasoning: string
+  }
+  
+  // Phase 2
+  countryDecision?: {
+    recommendedCountries: {
+      countryName: string
+      matchScore: number
+      whyRecommended: string
+      whyNotRecommended: string
+      expectedCost: string
+      postStudyWork: string
+      jobMarket: number
+      visaDifficulty: string
+    }[]
+  }
+  selectedCountry?: string
+  
+  // Phase 3
+  universityMatch?: {
+    bestMatchUniversities: {
+      id: string
+      name: string
+      country: string
+      admissionChance: number
+      ranking: number
+      tuition: number
+      livingCost: number
+      roi: number
+      scholarshipAvailability: string
+      whyRecommended: string
+    }[]
+  }
+  selectedUniversity?: string
+  
+  // Phase 4
+  admissionChance?: {
+    currentChance: number
+    chanceBreakdown: string
+    positiveFactors: string[]
+    negativeFactors: string[]
+    missingRequirements: string[]
+    improvedChanceAfterRecs: number
+  }
+  
+  // Phase 5
+  totalCost?: {
+    tuition: number
+    living: number
+    insurance: number
+    visa: number
+    travel: number
+    miscellaneous: number
+    totalCost: number
+    yearlyCost: number
+    monthlyCost: number
+  }
+  
+  // Phase 6
+  affordability?: {
+    canAfford: boolean
+    fundingGap: number
+    selfFundingCapacity: number
+    savingsContribution: number
+    familyContribution: number
+    reasoning: string
+  }
+  
+  // Phase 7
+  loanEngine?: {
+    loanAmountRequired: number
+    emi: number
+    interest: number
+    recommendedLenders: string[]
+  }
+  
+  // Phase 8
+  documentReadiness?: {
+    requiredDocuments: string[]
+    available: string[]
+    missing: string[]
+    pending: string[]
+  }
+  
+  // Phase 9
+  documentAcquisition?: {
+    guides: {
+      documentName: string
+      steps: string[]
+    }[]
+  }
+  
+  // Phase 10
+  reviewIntelligence?: {
+    pros: string[]
+    cons: string[]
+    placementInsights: string
+    housingInsights: string
+    studentSatisfaction: string
+    sentimentScore: number
+  }
+  
+  // Phase 11
+  actionRoadmap?: {
+    immediateActions: string[]
+    day7Plan: string[]
+    day30Plan: string[]
+    day60Plan: string[]
+    day90Plan: string[]
+  }
 }
-
-

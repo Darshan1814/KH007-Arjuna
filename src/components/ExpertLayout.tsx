@@ -3,7 +3,7 @@
 import { useAppStore } from '@/lib/store'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
-  Home, Users, MessageSquare, ShieldCheck, Banknote, LogOut, Menu, X, Sparkles, UserPlus
+  Home, Users, MessageSquare, ShieldCheck, Banknote, LogOut, Menu, X, Sparkles
 } from 'lucide-react'
 import { Toaster, toast } from 'react-hot-toast'
 import ExpertHome from './pages/expert/ExpertHome'
@@ -11,12 +11,10 @@ import ExpertStudents from './pages/expert/ExpertStudents'
 import ExpertChat from './pages/expert/ExpertChat'
 import ExpertKYC from './pages/expert/ExpertKYC'
 import ExpertEarnings from './pages/expert/ExpertEarnings'
-import ExpertRequests from './pages/expert/ExpertRequests'
 import { createClient } from '@/lib/supabase/client'
 
 const expertNavItems = [
   { id: 'expert-home', label: 'Dashboard Home', icon: Home },
-  { id: 'expert-requests', label: 'Connection Requests', icon: UserPlus },
   { id: 'expert-students', label: 'My Students', icon: Users },
   { id: 'expert-chat', label: 'Student Chats', icon: MessageSquare },
   { id: 'expert-earnings', label: 'Earnings', icon: Banknote },
@@ -114,7 +112,6 @@ export default function ExpertLayout() {
         <main className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar relative z-10" id="main-scroll-container">
           <div className="h-full relative">
             <div className={currentPage === 'expert-home' || currentPage === 'dashboard' ? 'block h-full' : 'hidden'}><ExpertHome /></div>
-            <div className={currentPage === 'expert-requests' ? 'block h-full' : 'hidden'}><ExpertRequests /></div>
             <div className={currentPage === 'expert-students' ? 'block h-full' : 'hidden'}><ExpertStudents /></div>
             <div className={currentPage === 'expert-chat' ? 'block h-full' : 'hidden'}><ExpertChat /></div>
             <div className={currentPage === 'expert-kyc' ? 'block h-full' : 'hidden'}><ExpertKYC /></div>

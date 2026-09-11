@@ -2,26 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useAppStore } from '@/lib/store'
-import { StudentProfile } from '@/lib/types'
-
-export function calculateProfileCompleteness(profile: StudentProfile): number {
-  const fields: (keyof StudentProfile)[] = [
-    'name', 'mobile', 'dob', 'city', 'educationLevel', 
-    'undergradCollege', 'undergradDegree', 'undergradCgpa', 
-    'targetCountries', 'targetDegree', 'expectedBudgetStr', 
-    'studyGoal', 'docPassport', 'docTranscripts'
-  ]
-  
-  let filled = 0
-  fields.forEach(field => {
-    const val = profile[field]
-    if (val && (Array.isArray(val) ? val.length > 0 : true)) {
-      filled++
-    }
-  })
-  
-  return Math.round((filled / fields.length) * 100)
-}
+import { calculateProfileCompleteness } from '@/lib/profileCompleteness'
 
 export default function NudgeEngine() {
   const { profile, addNotification, notifications } = useAppStore()

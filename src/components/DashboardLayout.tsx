@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useAppStore } from '@/lib/store'
 import {
   GraduationCap, LayoutDashboard, Brain, Target, TrendingUp,
@@ -27,7 +27,10 @@ import FormGuide from './pages/FormGuide'
 import DocumentVault from './pages/DocumentVault'
 import GrowthTools from './pages/GrowthTools'
 import NotificationsDropdown from './NotificationsDropdown'
-import NudgeEngine, { calculateProfileCompleteness } from './NudgeEngine'
+import NudgeEngine from './NudgeEngine'
+import { calculateProfileCompleteness, calculateProfileScore } from '@/lib/profileCompleteness'
+import ProfileCompletionGate from './ProfileCompletionGate'
+import ProfileWarningBanner from './ProfileWarningBanner'
 import LoanApply from './pages/LoanApply'
 import GamificationPage from './pages/GamificationPage'
 import TimelinePage from './pages/TimelinePage'
@@ -36,6 +39,7 @@ import ReferralPage from './pages/ReferralPage'
 import ProfilePage from './pages/ProfilePage'
 import ExpertDirectory from './pages/ExpertDirectory'
 import UserExpertChat from './pages/UserExpertChat'
+import AIEducationJourney from './pages/AIEducationJourney'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
@@ -60,6 +64,7 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
   {
     label: 'Explore',
     items: [
+      { icon: Star, label: '⭐ AI Education Journey', page: 'ai-journey' },
       { icon: Users, label: 'Clone Journey', page: 'clone-journey' },
       { icon: Brain, label: 'Career Navigator', page: 'career-navigator' },
       { icon: Award, label: 'Scholarships', page: 'scholarship-hunter' },
@@ -104,6 +109,7 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
 function PageContent({ page }: { page: PageType }) {
   switch (page) {
     case 'dashboard': return <DashboardHome />
+    case 'ai-journey': return <AIEducationJourney />
     case 'career-navigator': return <CareerNavigator />
     case 'roi-calculator': return <ROICalculator />
     case 'admission-predictor': return <AdmissionPredictor />
@@ -133,6 +139,9 @@ function PageContent({ page }: { page: PageType }) {
 
 export default function DashboardLayout() {
   const { currentPage, setCurrentPage, sidebarOpen, toggleSidebar, profile, theme, toggleTheme } = useAppStore()
+
+  const profileScore = useMemo(() => calculateProfileScore(profile), [profile])
+  const profilePct = profileScore.totalScore
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -171,34 +180,6 @@ export default function DashboardLayout() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
-
-  // Realtime Chat Session Listener
-  useEffect(() => {
-    if (!profile.id) return
-
-    const supabase = createClient()
-    const channel = supabase.channel('global-chat-listener')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'chat_sessions',
-          filter: `student_id=eq.${profile.id}`
-        },
-        (payload) => {
-          if (payload.new.status === 'active' && payload.old.status === 'pending') {
-            toast.success('🎉 Expert accepted your connection request!', { duration: 5000 })
-            setCurrentPage('user-expert-chat')
-          }
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [profile.id, setCurrentPage])
 
   return (
     <div className="flex min-h-screen" style={{ background: 'var(--background)' }}>
@@ -241,10 +222,10 @@ export default function DashboardLayout() {
           <div className="mt-3 p-2 rounded-lg" style={{ background: 'var(--background)' }}>
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs" style={{ color: 'var(--foreground-muted)' }}>Profile Completeness</span>
-              <span className="text-sm font-bold" style={{ color: 'var(--success)' }}>{calculateProfileCompleteness(profile)}%</span>
+              <span className="text-sm font-bold" style={{ color: profilePct >= 80 ? 'var(--success)' : 'var(--warning)' }}>{profilePct}%</span>
             </div>
             <div className="progress-bar">
-              <div className="progress-bar-fill" style={{ width: `${calculateProfileCompleteness(profile)}%`, background: 'var(--success)' }} />
+              <div className="progress-bar-fill" style={{ width: `${profilePct}%`, background: profilePct >= 80 ? 'var(--success)' : 'var(--warning)' }} />
             </div>
           </div>
           <div className="mt-3 p-2 rounded-lg" style={{ background: 'var(--background)' }}>
@@ -335,7 +316,19 @@ export default function DashboardLayout() {
 
         {/* Page content */}
         <div className="p-4 sm:p-6">
-          <PageContent page={currentPage} />
+          {(currentPage === 'ai-journey' && profilePct < 80) ? (
+            <ProfileCompletionGate />
+          ) : (
+            <>
+              {currentPage === 'ai-journey' && profilePct < 100 && (
+                <div className="p-4 mb-4 rounded-xl text-sm font-medium" style={{ background: 'var(--warning)', color: '#000' }}>
+                  Complete your profile for more accurate recommendations.
+                </div>
+              )}
+              {currentPage !== 'ai-journey' && <ProfileWarningBanner />}
+              <PageContent page={currentPage} />
+            </>
+          )}
         </div>
       </main>
       <NudgeEngine />

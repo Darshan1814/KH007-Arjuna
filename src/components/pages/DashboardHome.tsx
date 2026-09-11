@@ -11,7 +11,7 @@ import {
   GraduationCap, Flame, Zap, ArrowUpRight, Trophy, Clock,
   Search, FileText, UserCheck, Gift, Award, User, Briefcase, Globe, Wallet
 } from 'lucide-react'
-import { calculateProfileCompleteness } from '../NudgeEngine'
+import { calculateProfileCompleteness } from '@/lib/profileCompleteness'
 
 const SnapshotCard = ({ title, icon: Icon, children }: any) => (
   <div className="card p-4 flex flex-col gap-2 bg-surface/50 border border-border/50 hover:border-primary/30 transition-colors">

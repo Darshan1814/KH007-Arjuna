@@ -9,7 +9,8 @@ export default function AdminAnalytics() {
   const [stats, setStats] = useState({
     totalStudents: 0,
     verifiedExperts: 0,
-    loanApps: 0
+    loanApps: 0,
+    activeChats: 12 // Placeholder until chat sessions are moved to Supabase DB
   })
   const [topCountries, setTopCountries] = useState<{country: string, percentage: number, color: string}[]>([])
   const [loading, setLoading] = useState(true)
@@ -40,7 +41,8 @@ export default function AdminAnalytics() {
         setStats({
           totalStudents: studentCount,
           verifiedExperts: expertCount || 0,
-          loanApps: loanSeekers
+          loanApps: loanSeekers,
+          activeChats: 12
         })
 
         // Calculate dynamic Top Countries
@@ -97,23 +99,20 @@ export default function AdminAnalytics() {
         </div>
       ) : (
         <>
-          {/* Premium KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: 'Total Students', value: stats.totalStudents.toLocaleString(), icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/10', glow: 'shadow-blue-500/20' },
-              { label: 'Verified Experts', value: stats.verifiedExperts, icon: Briefcase, color: 'text-indigo-400', bg: 'bg-indigo-500/10', glow: 'shadow-indigo-500/20' },
-              { label: 'Loan Apps', value: stats.loanApps, icon: Banknote, color: 'text-emerald-400', bg: 'bg-emerald-500/10', glow: 'shadow-emerald-500/20' },
+              { label: 'Total Students', value: stats.totalStudents.toLocaleString(), icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+              { label: 'Verified Experts', value: stats.verifiedExperts, icon: Briefcase, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
+              { label: 'Active Chats', value: stats.activeChats, icon: MessageSquare, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+              { label: 'Loan Apps', value: stats.loanApps, icon: Banknote, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
             ].map((stat, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} 
-                className={`card relative overflow-hidden group hover:shadow-xl hover:${stat.glow} transition-all duration-300 border border-white/5`}>
-                {/* Subtle gradient orb in background */}
-                <div className={`absolute -right-4 -top-4 w-24 h-24 rounded-full ${stat.bg} blur-2xl opacity-50 group-hover:opacity-100 transition-opacity`} />
-                
-                <div className="flex items-center gap-4 mb-4 relative z-10">
-                  <div className={`p-3 rounded-xl ${stat.bg} ${stat.color} shadow-inner backdrop-blur-sm`}><stat.icon className="w-6 h-6" /></div>
-                  <div className="text-sm font-bold text-foreground-muted uppercase tracking-wider">{stat.label}</div>
+              <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="card">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`p-2 rounded-lg ${stat.bg} ${stat.color}`}><stat.icon className="w-5 h-5" /></div>
+                  <div className="text-sm font-medium text-foreground-secondary">{stat.label}</div>
                 </div>
-                <div className="text-4xl font-extrabold text-foreground relative z-10 tracking-tight">{stat.value}</div>
+                <div className="text-3xl font-bold text-foreground">{stat.value}</div>
               </motion.div>
             ))}
           </div>
@@ -139,7 +138,7 @@ export default function AdminAnalytics() {
                         </motion.div>
                       </div>
                       {i < funnelData.length - 1 && (
-                        <div className="w-16 text-right text-[11px] font-bold py-1 px-2 rounded-md bg-white/5 border border-white/10 text-foreground-secondary">
+                        <div className="w-16 text-right text-[10px] text-foreground-muted font-mono">
                           {Math.round((funnelData[i+1].count / (step.count || 1)) * 100)}%
                         </div>
                       )}

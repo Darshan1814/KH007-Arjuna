@@ -11,7 +11,7 @@ export default function ExpertEarnings() {
   const [withdrawing, setWithdrawing] = useState(false)
 
   // Mock data
-  const totalEarnings = 15000
+  const totalEarnings: number = 15000
   const sessionRate = profile.sessionRate || 2000
 
   const handleWithdraw = () => {

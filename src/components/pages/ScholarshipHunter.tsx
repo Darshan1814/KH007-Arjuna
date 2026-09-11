@@ -22,7 +22,7 @@ interface Scholarship {
   matchScore: number
 }
 
-export default function ScholarshipHunter() {
+export default function ScholarshipHunter({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile, addXP } = useAppStore()
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
@@ -90,21 +90,23 @@ export default function ScholarshipHunter() {
 
   return (
     <div className="max-w-6xl space-y-8">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-[var(--foreground)] flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
-              <Award className="w-6 h-6 text-amber-500" />
-            </div>
-            Scholarship Hunter
-          </h2>
-          <p className="mt-2" style={{ color: 'var(--foreground-secondary)' }}>Real-time scholarship discovery powered by Serper & Groq Intelligence.</p>
+      {!embedded && (
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h2 className="text-3xl font-bold text-[var(--foreground)] flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
+                <Award className="w-6 h-6 text-amber-500" />
+              </div>
+              Scholarship Hunter
+            </h2>
+            <p className="mt-2" style={{ color: 'var(--foreground-secondary)' }}>Real-time scholarship discovery powered by Serper & Groq Intelligence.</p>
+          </div>
+          <div className="flex items-center gap-2 p-2 bg-white/5 rounded-xl border border-white/10">
+            <GraduationCap className="w-4 h-4 text-indigo-400" />
+            <span className="text-xs font-semibold" style={{ color: 'var(--foreground-secondary)' }}>Matching: {profile.targetProgram || 'Any Program'}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2 p-2 bg-white/5 rounded-xl border border-white/10">
-          <GraduationCap className="w-4 h-4 text-indigo-400" />
-          <span className="text-xs font-semibold" style={{ color: 'var(--foreground-secondary)' }}>Matching: {profile.targetProgram || 'Any Program'}</span>
-        </div>
-      </div>
+      )}
 
       {/* Search Bar */}
       <form onSubmit={searchScholarships} className="relative group">

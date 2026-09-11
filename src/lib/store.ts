@@ -27,6 +27,8 @@ interface AppState {
   updateProfile: (updates: Partial<StudentProfile>) => void
   isOnboarded: boolean
   setOnboarded: (value: boolean) => void
+  targetOnboardingStep: number | null
+  setTargetOnboardingStep: (step: number | null) => void
 
   // Chat
   chatMessages: ChatMessage[]
@@ -118,6 +120,8 @@ export const useAppStore = create<AppState>()(
         })),
       isOnboarded: false,
       setOnboarded: (value) => set({ isOnboarded: value }),
+      targetOnboardingStep: null,
+      setTargetOnboardingStep: (step) => set({ targetOnboardingStep: step }),
 
       // Chat
       chatMessages: [],

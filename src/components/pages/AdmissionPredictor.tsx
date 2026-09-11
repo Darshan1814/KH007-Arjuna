@@ -7,7 +7,7 @@ import { getAdmissionProbability } from '@/lib/utils'
 import { Target, Search, Filter } from 'lucide-react'
 import { useState, useMemo } from 'react'
 
-export default function AdmissionPredictor() {
+export default function AdmissionPredictor({ embedded = false }: { embedded?: boolean } = {}) {
   const { profile } = useAppStore()
   const [search, setSearch] = useState('')
   const [countryFilter, setCountryFilter] = useState('all')
@@ -34,15 +34,17 @@ export default function AdmissionPredictor() {
 
   return (
     <div className="max-w-6xl space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Target className="w-6 h-6" style={{ color: 'var(--accent)' }} />
-          Admission Probability Predictor
-        </h2>
-        <p className="mt-1" style={{ color: 'var(--foreground-secondary)' }}>
-          Your profile: CGPA {profile.cgpa}/10, GRE {profile.greScore || 'N/A'}. See where you stand at each university.
-        </p>
-      </div>
+      {!embedded && (
+        <div>
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Target className="w-6 h-6" style={{ color: 'var(--accent)' }} />
+            Admission Probability Predictor
+          </h2>
+          <p className="mt-1" style={{ color: 'var(--foreground-secondary)' }}>
+            Your profile: CGPA {profile.cgpa}/10, GRE {profile.greScore || 'N/A'}. See where you stand at each university.
+          </p>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
