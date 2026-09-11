@@ -8,7 +8,7 @@ import {
   GraduationCap, LayoutDashboard, Brain, Target, TrendingUp,
   DollarSign, Calculator, BookOpen, Shield, MessageCircle,
   Award, Users, Globe, Menu, X, Flame, Star, Zap, Newspaper,
-  Sun, Moon, ClipboardList, Calendar, Trophy, CreditCard, UserCheck, Gift,
+  Sun, Moon, ClipboardList, Calendar, Trophy, UserCheck, Gift,
   PenTool, FileText, User, LogOut
 } from 'lucide-react'
 import type { PageType } from '@/lib/types'
@@ -35,7 +35,6 @@ import NudgeEngine from './NudgeEngine'
 import { calculateProfileCompleteness, calculateProfileScore } from '@/lib/profileCompleteness'
 import ProfileCompletionGate from './ProfileCompletionGate'
 import ProfileWarningBanner from './ProfileWarningBanner'
-import LoanApply from './pages/LoanApply'
 import GamificationPage from './pages/GamificationPage'
 import TimelinePage from './pages/TimelinePage'
 import InterviewPrep from './pages/InterviewPrep'
@@ -44,8 +43,10 @@ import ProfilePage from './pages/ProfilePage'
 import ExpertDirectory from './pages/ExpertDirectory'
 import UserExpertChat from './pages/UserExpertChat'
 import AIEducationJourney from './pages/AIEducationJourney'
+import CollegeMatch from './pages/CollegeMatch'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
+import { usePresence } from '@/lib/usePresence'
 
 const navSections: { label: string; items: { icon: typeof LayoutDashboard; label: string; page: PageType }[] }[] = [
   {
@@ -79,6 +80,7 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
     label: 'Evaluate',
     items: [
       { icon: Target, label: 'Admission Predictor', page: 'admission-predictor' },
+      { icon: GraduationCap, label: 'College Match', page: 'college-match' },
       { icon: Target, label: 'Domestic Predictor', page: 'domestic-admission-predictor' },
       { icon: TrendingUp, label: 'ROI Calculator', page: 'roi-calculator' },
       { icon: Globe, label: 'Currency Risk', page: 'currency-risk' },
@@ -99,7 +101,6 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
       { icon: DollarSign, label: 'Loan Center', page: 'loan-center' },
       { icon: DollarSign, label: 'Domestic Loan Center', page: 'domestic-loan-center' },
       { icon: Calculator, label: 'EMI Calculator', page: 'emi-calculator' },
-      { icon: CreditCard, label: 'Loan Apply', page: 'loan-apply' },
     ]
   },
   {
@@ -119,6 +120,7 @@ function PageContent({ page }: { page: PageType }) {
     case 'career-navigator': return <CareerNavigator />
     case 'roi-calculator': return <ROICalculator />
     case 'admission-predictor': return <AdmissionPredictor />
+    case 'college-match': return <CollegeMatch />
     case 'domestic-admission-predictor': return <DomesticAdmissionPredictor />
     case 'loan-center': return <LoanCenter />
     case 'domestic-loan-center': return <DomesticLoanCenter />
@@ -131,7 +133,6 @@ function PageContent({ page }: { page: PageType }) {
     case 'currency-risk': return <CurrencyRisk />
     case 'news': return <NewsPage />
     case 'form-guide': return <FormGuide />
-    case 'loan-apply': return <LoanApply />
     case 'document-vault': return <DocumentVault />
     case 'gamification': return <GamificationPage />
     case 'timeline': return <TimelinePage />
@@ -150,11 +151,24 @@ export default function DashboardLayout() {
   const track = useTrack()
   const visibleNavSections = useMemo(() => filterNavSections(navSections, track), [track])
 
+  // Keep profiles.status in sync with whether this student tab is open.
+  usePresence(profile?.id)
+
   const profileScore = useMemo(() => calculateProfileScore(profile), [profile])
   const profilePct = profileScore.totalScore
 
   const handleLogout = async () => {
     const supabase = createClient()
+    if (profile?.id) {
+      try {
+        await fetch('/api/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: profile.id, status: 'offline' }),
+          keepalive: true,
+        })
+      } catch {}
+    }
     await supabase.auth.signOut()
     toast.success('Logged out successfully')
     // page.tsx listener will handle redirection

@@ -371,6 +371,7 @@ export type PageType =
   | 'career-navigator' 
   | 'roi-calculator' 
   | 'admission-predictor' 
+  | 'college-match'
   | 'loan-center' 
   | 'emi-calculator' 
   | 'sop-copilot' 
@@ -384,7 +385,6 @@ export type PageType =
   | 'living-cost'
   | 'news'
   | 'form-guide'
-  | 'loan-apply'
   | 'timeline'
   | 'interview-prep'
   | 'referrals'
@@ -509,7 +509,11 @@ export interface DecisionEngineState {
     academicScore: number
     financialScore: number
     admissionReadinessScore: number
-    reasoning: string
+    reasoning?: string
+    summary?: string
+    academicPoints?: string[]
+    financialPoints?: string[]
+    admissionPoints?: string[]
   }
   
   // Phase 2
@@ -517,8 +521,9 @@ export interface DecisionEngineState {
     recommendedCountries: {
       countryName: string
       matchScore: number
-      whyRecommended: string
-      whyNotRecommended: string
+      whyRecommended: string | string[]
+      whyNotRecommended?: string
+      considerations?: string[]
       expectedCost: string
       postStudyWork: string
       jobMarket: number
@@ -539,7 +544,7 @@ export interface DecisionEngineState {
       livingCost: number
       roi: number
       scholarshipAvailability: string
-      whyRecommended: string
+      whyRecommended: string | string[]
     }[]
   }
   selectedUniversity?: string
@@ -547,7 +552,8 @@ export interface DecisionEngineState {
   // Phase 4
   admissionChance?: {
     currentChance: number
-    chanceBreakdown: string
+    chanceBreakdown?: string
+    breakdownPoints?: string[]
     positiveFactors: string[]
     negativeFactors: string[]
     missingRequirements: string[]
@@ -574,7 +580,8 @@ export interface DecisionEngineState {
     selfFundingCapacity: number
     savingsContribution: number
     familyContribution: number
-    reasoning: string
+    reasoning?: string
+    reasoningPoints?: string[]
   }
   
   // Phase 7
@@ -583,6 +590,7 @@ export interface DecisionEngineState {
     emi: number
     interest: number
     recommendedLenders: string[]
+    notes?: string[]
   }
   
   // Phase 8

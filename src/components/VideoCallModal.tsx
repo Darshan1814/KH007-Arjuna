@@ -29,11 +29,19 @@ export default function VideoCallModal({
   const [isMuted, setIsMuted] = useState(false)
   const [isVideoOff, setIsVideoOff] = useState(isAudioOnly)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  
+  const [hasRemote, setHasRemote] = useState(false)
+
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const pcRef = useRef<RTCPeerConnection | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
+
+  // Buffer remote signals that arrive before the peer connection is ready
+  // (e.g. a flurry of ICE candidates landing while getUserMedia is resolving).
+  // They are drained inside handleSignaling once pcRef.current exists.
+  const pendingSignalsRef = useRef<any[]>([])
+  const seenSignalsRef = useRef<Set<string>>(new Set())
+  const remoteDescSetRef = useRef(false)
 
   // Timer
   useEffect(() => {
@@ -49,18 +57,49 @@ export default function VideoCallModal({
   // WebRTC Initialization
   useEffect(() => {
     if (callState === 'connected') {
+      // Reset per-call state so a second call in the same session starts clean.
+      pendingSignalsRef.current = []
+      seenSignalsRef.current = new Set()
+      remoteDescSetRef.current = false
+      setHasRemote(false)
       startWebRTC()
     } else {
       cleanupWebRTC()
     }
     return () => cleanupWebRTC()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callState])
 
-  // Handle incoming WebRTC signaling
+  // Handle every incoming WebRTC signal. We dedupe (the remote may resend
+  // SDP via the realtime fetcher's "missed signals" pass) and we BUFFER
+  // anything that arrives before the local PC is ready instead of
+  // discarding it — that race was why no remote video ever showed up.
   useEffect(() => {
-    if (!webRTCSignal || callState !== 'connected' || !pcRef.current) return
+    if (!webRTCSignal || callState !== 'connected') return
+    if (webRTCSignal.type !== 'SDP' && webRTCSignal.type !== 'ICE') return
+
+    // Dedupe so a message appearing in both the realtime feed and the
+    // bootstrap fetch isn't applied twice.
+    const fingerprint = JSON.stringify(webRTCSignal)
+    if (seenSignalsRef.current.has(fingerprint)) return
+    seenSignalsRef.current.add(fingerprint)
+
+    if (!pcRef.current) {
+      pendingSignalsRef.current.push(webRTCSignal)
+      return
+    }
     handleSignaling(webRTCSignal)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [webRTCSignal, callState])
+
+  const drainPendingSignals = async () => {
+    const queue = pendingSignalsRef.current
+    pendingSignalsRef.current = []
+    for (const sig of queue) {
+      // eslint-disable-next-line no-await-in-loop
+      await handleSignaling(sig)
+    }
+  }
 
   const startWebRTC = async () => {
     try {
@@ -71,24 +110,41 @@ export default function VideoCallModal({
       localStreamRef.current = stream
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream
+        // Some browsers (Safari) need an explicit play() to start preview
+        localVideoRef.current.play().catch(() => {})
       }
 
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ]
       })
       pcRef.current = pc
 
       stream.getTracks().forEach(track => pc.addTrack(track, stream))
 
       pc.ontrack = (event) => {
-        if (remoteVideoRef.current && event.streams[0]) {
-          remoteVideoRef.current.srcObject = event.streams[0]
+        const remoteStream = event.streams[0] || new MediaStream([event.track])
+        if (remoteVideoRef.current) {
+          if (remoteVideoRef.current.srcObject !== remoteStream) {
+            remoteVideoRef.current.srcObject = remoteStream
+            // Explicit play() — required by Safari and helpful elsewhere.
+            remoteVideoRef.current.play().catch(() => {})
+          }
         }
+        setHasRemote(true)
       }
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          sendWebRTCSignal({ type: 'ICE', candidate: event.candidate })
+          sendWebRTCSignal({ type: 'ICE', candidate: event.candidate.toJSON() })
+        }
+      }
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'failed') {
+          console.warn('[WebRTC] connection failed')
         }
       }
 
@@ -97,6 +153,10 @@ export default function VideoCallModal({
         await pc.setLocalDescription(offer)
         sendWebRTCSignal({ type: 'SDP', sdp: pc.localDescription })
       }
+
+      // Anything that arrived while we were awaiting getUserMedia /
+      // setLocalDescription is processed now in arrival order.
+      await drainPendingSignals()
     } catch (err) {
       console.error('Error starting WebRTC:', err)
     }
@@ -104,17 +164,29 @@ export default function VideoCallModal({
 
   const handleSignaling = async (signal: any) => {
     const pc = pcRef.current
-    if (!pc) return
+    if (!pc) {
+      pendingSignalsRef.current.push(signal)
+      return
+    }
 
     try {
-      if (signal.type === 'SDP') {
+      if (signal.type === 'SDP' && signal.sdp) {
         await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp))
+        remoteDescSetRef.current = true
         if (signal.sdp.type === 'offer') {
           const answer = await pc.createAnswer()
           await pc.setLocalDescription(answer)
           sendWebRTCSignal({ type: 'SDP', sdp: pc.localDescription })
         }
-      } else if (signal.type === 'ICE') {
+        // ICE candidates that arrived before the remote SDP was applied
+        // can be added now.
+        await drainPendingSignals()
+      } else if (signal.type === 'ICE' && signal.candidate) {
+        if (!remoteDescSetRef.current) {
+          // Wait until setRemoteDescription has been called.
+          pendingSignalsRef.current.push(signal)
+          return
+        }
         await pc.addIceCandidate(new RTCIceCandidate(signal.candidate))
       }
     } catch (err) {
@@ -131,6 +203,10 @@ export default function VideoCallModal({
     }
     localStreamRef.current = null
     pcRef.current = null
+    pendingSignalsRef.current = []
+    seenSignalsRef.current = new Set()
+    remoteDescSetRef.current = false
+    setHasRemote(false)
   }
 
   const toggleMute = () => {
@@ -199,7 +275,17 @@ export default function VideoCallModal({
                   playsInline 
                   className="w-full h-full object-cover"
                 />
-                
+
+                {/* Connecting placeholder while we wait for the remote track */}
+                {!hasRemote && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0b141a]/90 text-white pointer-events-none">
+                    <div className="w-24 h-24 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-4">
+                      <Video className="w-10 h-10 text-white/40" />
+                    </div>
+                    <p className="text-sm text-gray-300">Connecting to {userName}…</p>
+                  </div>
+                )}
+
                 {/* Local Video (Floating Picture-in-Picture) */}
                 <motion.div 
                   drag

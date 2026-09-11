@@ -32,12 +32,31 @@ export default function ExpertChat() {
   const [webRTCSignal, setWebRTCSignal] = useState<any>(null)
   const channelRef = useRef<any>(null)
 
-  // Update own last_seen presence
+  // Heartbeat: write our last_seen every 30s while this page is mounted, plus
+  // on tab visibility changes so an idle expert still shows Online to the
+  // student. Without this, presence only refreshed on keystrokes.
   useEffect(() => {
-    if (profile?.id) {
-      supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', profile.id).then()
+    if (!profile?.id) return
+
+    const beat = () =>
+      supabase
+        .from('profiles')
+        .update({ last_seen: new Date().toISOString() })
+        .eq('id', profile.id)
+        .then()
+
+    beat()
+    const interval = setInterval(beat, 30_000)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') beat()
     }
-  }, [profile?.id, inputText])
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [profile?.id])
 
   // Voice Note States
   const [isRecording, setIsRecording] = useState(false)
@@ -167,6 +186,48 @@ export default function ExpertChat() {
       supabase.removeChannel(channel)
     }
   }, [activeChatId])
+
+  // Realtime presence: subscribe to UPDATEs on the active student's profile
+  // row and re-render so the Online/Last seen label flips live for the expert.
+  const activeStudent = sessions.find((s) => s.id === activeChatId)?.student
+  const activeStudentId: string | undefined = activeStudent?.id
+
+  useEffect(() => {
+    if (!activeStudentId) return
+
+    const channel = supabase
+      .channel(`presence_${activeStudentId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${activeStudentId}` },
+        (payload) => {
+          const fresh = payload.new as any
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.student?.id === activeStudentId
+                ? {
+                    ...s,
+                    student: { ...s.student, last_seen: fresh.last_seen, status: fresh.status },
+                  }
+                : s,
+            ),
+          )
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [activeStudentId])
+
+  // Re-render the Online/Last seen text every minute so freshness doesn't
+  // go stale on a quiet chat.
+  const [, setPresenceTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setPresenceTick((n) => n + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   // Broadcast Call Signals via DB Inserts
   const sendSignal = async (signalData: any) => {
@@ -326,10 +387,15 @@ export default function ExpertChat() {
   const formatTime = (isoString: string) => new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
   if (loading) {
-    return <div className="flex-1 flex items-center justify-center bg-[#0b141a]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+    return <div className="flex-1 flex items-center justify-center chat-shell"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
   }
 
-  const getPresenceText = (lastSeen: string | undefined) => {
+  const getPresenceText = (lastSeen: string | undefined, status?: string) => {
+    if (status === 'online') return 'Online'
+    if (status === 'offline') {
+      if (!lastSeen) return 'Offline'
+      return `Last seen ${new Date(lastSeen).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+    }
     if (!lastSeen) return 'Offline'
     const diff = Date.now() - new Date(lastSeen).getTime()
     if (diff < 5 * 60 * 1000) return 'Online'
@@ -340,11 +406,11 @@ export default function ExpertChat() {
   const student = activeSession?.student || { name: 'Student' }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] rounded-2xl overflow-hidden shadow-2xl border border-border bg-background">
+    <div data-chat-theme="invert" className="flex h-[calc(100vh-8rem)] rounded-2xl overflow-hidden shadow-2xl border chat-shell" style={{ borderColor: 'var(--chat-border)' }}>
       
       {/* Sidebar - Chat List */}
-      <div className="w-80 border-r border-border bg-[#111b21] flex flex-col hidden md:flex">
-        <div className="p-4 bg-[#202c33] text-gray-200 font-bold text-lg flex items-center justify-between border-b border-white/5">
+      <div className="w-80 border-r flex flex-col hidden md:flex chat-strip" style={{ borderColor: 'var(--chat-border)' }}>
+        <div className="p-4 chat-elevated font-bold text-lg flex items-center justify-between border-b" style={{ borderColor: 'var(--chat-border)' }}>
           Active Chats
         </div>
         <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -355,7 +421,7 @@ export default function ExpertChat() {
           ) : sessions.map(chat => {
             const stu = chat.student || { name: 'Student' }
             const isActive = activeChatId === chat.id
-            const presence = getPresenceText(stu.last_seen)
+            const presence = getPresenceText(stu.last_seen, stu.status)
             
             return (
               <button key={chat.id} onClick={() => setActiveChatId(chat.id)}
@@ -386,16 +452,23 @@ export default function ExpertChat() {
               <img src={student.avatar_url || `https://ui-avatars.com/api/?name=${student.name}`} className="w-10 h-10 rounded-full border border-white/10" alt="" />
               <div>
                 <div className="font-semibold text-gray-100">{student.name || 'Student'}</div>
-                <div className={`text-xs font-medium ${getPresenceText(student.last_seen) === 'Online' ? 'text-emerald-500' : 'text-gray-400'}`}>
-                  {getPresenceText(student.last_seen)}
-                </div>
+                {(() => {
+                  const text = getPresenceText(student.last_seen, student.status)
+                  const online = text === 'Online'
+                  return (
+                    <div className={`text-xs font-medium flex items-center gap-1.5 ${online ? 'text-emerald-500' : 'text-gray-400'}`}>
+                      {online && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />}
+                      {text}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => handleStartCall(false)} className="p-2 hover:bg-white/10 rounded-full text-gray-300 transition-colors">
+              <button onClick={() => handleStartCall(false)} className="p-2 hover:bg-black/10 rounded-full chat-fg-muted transition-colors">
                 <Video className="w-5 h-5" />
               </button>
-              <button onClick={() => handleStartCall(true)} className="p-2 hover:bg-white/10 rounded-full text-gray-300 transition-colors">
+              <button onClick={() => handleStartCall(true)} className="p-2 hover:bg-black/10 rounded-full chat-fg-muted transition-colors">
                 <Phone className="w-4 h-4" />
               </button>
               <button onClick={() => setShowCopilot(!showCopilot)} className="p-2 ml-2 bg-indigo-500/20 text-indigo-400 rounded-lg hover:bg-indigo-500/30 transition-colors flex items-center gap-2">
@@ -418,7 +491,7 @@ export default function ExpertChat() {
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
             {messages.length === 0 && (
-              <div className="text-center p-4 bg-white/5 rounded-lg text-sm text-gray-300 max-w-xs mx-auto border border-white/10">
+              <div className="text-center p-4 rounded-lg text-sm max-w-xs mx-auto chat-elevated">
                 You are now connected! Messages and documents are end-to-end encrypted.
               </div>
             )}
@@ -428,7 +501,7 @@ export default function ExpertChat() {
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[85%] sm:max-w-[70%] rounded-lg p-2 px-3 shadow-sm relative group ${
-                    isMine ? 'bg-[#005c4b] text-[#e9edef]' : 'bg-[#202c33] text-[#e9edef]'
+                    isMine ? 'chat-bubble-outgoing' : 'chat-bubble-incoming'
                   }`} style={{ borderTopRightRadius: isMine ? '0' : '0.5rem', borderTopLeftRadius: !isMine ? '0' : '0.5rem' }}>
                     
                     {msg.document_url && msg.document_name === 'audio' ? (
@@ -439,7 +512,7 @@ export default function ExpertChat() {
                       </div>
                     ) : msg.document_url ? (
                       <a href={msg.document_url} target="_blank" rel="noopener noreferrer" 
-                         className="flex items-center gap-3 bg-black/20 p-2 rounded-md mb-2 hover:bg-black/40 transition-colors border border-white/5">
+                         className="flex items-center gap-3 bg-black/10 p-2 rounded-md mb-2 hover:bg-black/20 transition-colors">
                         <div className="p-2 bg-red-500/20 rounded text-red-400"><FileText className="w-5 h-5" /></div>
                         <div className="text-sm truncate pr-4">{msg.document_name}</div>
                       </a>
@@ -448,8 +521,8 @@ export default function ExpertChat() {
                     <div className="text-[14.5px] leading-relaxed whitespace-pre-wrap font-sans">{msg.content}</div>
                     
                     <div className="flex items-center justify-end gap-1 mt-1 -mr-1">
-                      <span className="text-[10px] text-white/50">{formatTime(msg.created_at)}</span>
-                      {isMine && (msg.is_read ? <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" /> : <Check className="w-3.5 h-3.5 text-white/50" />)}
+                      <span className="text-[10px] opacity-60">{formatTime(msg.created_at)}</span>
+                      {isMine && (msg.is_read ? <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" /> : <Check className="w-3.5 h-3.5 opacity-60" />)}
                     </div>
                   </div>
                 </div>
@@ -458,7 +531,7 @@ export default function ExpertChat() {
             <div ref={messagesEndRef} />
           </div>
 
-          <form onSubmit={handleSend} className="p-3 flex items-center gap-2 bg-[#202c33]">
+          <form onSubmit={handleSend} className="p-3 flex items-center gap-2 chat-elevated">
             <input 
               type="file" 
               ref={fileInputRef} 
@@ -470,12 +543,12 @@ export default function ExpertChat() {
               type="button" 
               disabled={uploading || isRecording}
               onClick={() => fileInputRef.current?.click()} 
-              className="p-3 text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-full transition-colors disabled:opacity-50"
+              className="p-3 chat-fg-muted hover:bg-black/5 rounded-full transition-colors disabled:opacity-50"
             >
               {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
             </button>
             
-            <div className="flex-1 bg-[#2a3942] rounded-xl flex items-center px-4 py-2 border border-white/5 overflow-hidden">
+            <div className="flex-1 chat-input rounded-xl flex items-center px-4 py-2 overflow-hidden">
               {isRecording ? (
                 <div className="flex-1 flex items-center gap-3 text-red-400 animate-pulse font-medium">
                   <Mic className="w-5 h-5" /> Recording... {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
@@ -486,7 +559,7 @@ export default function ExpertChat() {
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder="Type a message..."
-                  className="w-full bg-transparent outline-none text-gray-100 placeholder-gray-400 text-[15px]"
+                  className="w-full bg-transparent outline-none chat-fg text-[15px]"
                 />
               )}
             </div>
@@ -500,14 +573,14 @@ export default function ExpertChat() {
                 <StopCircle className="w-5 h-5" />
               </button>
             ) : (
-              <button type="button" onClick={startRecording} className="p-3 text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-full transition-colors">
+              <button type="button" onClick={startRecording} className="p-3 chat-fg-muted hover:bg-black/5 rounded-full transition-colors">
                 <Mic className="w-5 h-5" />
               </button>
             )}
           </form>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center bg-[#0b141a] text-gray-400">
+        <div className="flex-1 flex flex-col items-center justify-center chat-shell chat-fg-muted">
           <Bot className="w-12 h-12 mb-4 opacity-20" />
           <p>Select a chat from the sidebar to start messaging.</p>
         </div>
@@ -517,20 +590,20 @@ export default function ExpertChat() {
       <AnimatePresence>
         {showCopilot && activeChatId && (
           <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: 320, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
-            className="border-l border-border bg-[#111b21] flex flex-col flex-shrink-0">
-            <div className="p-4 border-b border-border flex items-center justify-between">
+            className="border-l chat-strip flex flex-col flex-shrink-0" style={{ borderColor: 'var(--chat-border)' }}>
+            <div className="p-4 border-b chat-divider flex items-center justify-between">
               <div className="flex items-center gap-2 text-indigo-400 font-bold">
                 {copilotLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />} AI Co-pilot
               </div>
-              <button onClick={() => setShowCopilot(false)} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
+              <button onClick={() => setShowCopilot(false)} className="chat-fg-muted hover:chat-fg"><X className="w-5 h-5" /></button>
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
               
               {/* Suggested Reply */}
               <div>
-                <h4 className="text-xs uppercase tracking-wider text-gray-500 font-bold mb-2">Suggested Reply</h4>
-                <div className="bg-[#202c33] rounded-lg p-3 text-sm text-gray-300 border border-indigo-500/20">
+                <h4 className="text-xs uppercase tracking-wider chat-fg-subtle font-bold mb-2">Suggested Reply</h4>
+                <div className="chat-elevated rounded-lg p-3 text-sm chat-fg border border-indigo-500/20">
                   {copilotData?.suggestedReply || "Hi! I've reviewed your profile and I'm ready to help you with your applications. What's your biggest priority right now?"}
                   {copilotData?.suggestedReply && (
                     <button onClick={() => setInputText(copilotData.suggestedReply!)} className="mt-3 w-full py-1.5 rounded bg-indigo-500/20 text-indigo-400 text-xs font-bold hover:bg-indigo-500/30 transition-colors">
@@ -542,18 +615,18 @@ export default function ExpertChat() {
 
               {/* Student Profile Snapshot */}
               <div>
-                <h4 className="text-xs uppercase tracking-wider text-gray-500 font-bold mb-2 flex items-center gap-2">
+                <h4 className="text-xs uppercase tracking-wider chat-fg-subtle font-bold mb-2 flex items-center gap-2">
                   <UserIcon className="w-4 h-4" /> Live Profile Snapshot
                 </h4>
-                <div className="bg-[#202c33] rounded-lg p-3 space-y-2 text-sm text-gray-300">
-                  <div className="flex justify-between"><span className="text-gray-500">CGPA</span> <span>{copilotData?.profileSnapshot?.cgpa || 'N/A'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">GRE</span> <span>{copilotData?.profileSnapshot?.gre || 'N/A'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">IELTS</span> <span>{copilotData?.profileSnapshot?.ielts || 'N/A'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Work Exp</span> <span>{copilotData?.profileSnapshot?.workExp || 'N/A'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Budget</span> <span>{copilotData?.profileSnapshot?.budget || 'N/A'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Stage</span> <span>{copilotData?.profileSnapshot?.stage || 'N/A'}</span></div>
+                <div className="chat-elevated rounded-lg p-3 space-y-2 text-sm chat-fg">
+                  <div className="flex justify-between"><span className="chat-fg-subtle">CGPA</span> <span>{copilotData?.profileSnapshot?.cgpa || 'N/A'}</span></div>
+                  <div className="flex justify-between"><span className="chat-fg-subtle">GRE</span> <span>{copilotData?.profileSnapshot?.gre || 'N/A'}</span></div>
+                  <div className="flex justify-between"><span className="chat-fg-subtle">IELTS</span> <span>{copilotData?.profileSnapshot?.ielts || 'N/A'}</span></div>
+                  <div className="flex justify-between"><span className="chat-fg-subtle">Work Exp</span> <span>{copilotData?.profileSnapshot?.workExp || 'N/A'}</span></div>
+                  <div className="flex justify-between"><span className="chat-fg-subtle">Budget</span> <span>{copilotData?.profileSnapshot?.budget || 'N/A'}</span></div>
+                  <div className="flex justify-between"><span className="chat-fg-subtle">Stage</span> <span>{copilotData?.profileSnapshot?.stage || 'N/A'}</span></div>
                 </div>
-                <p className="text-[10px] text-gray-500 mt-2 text-center">Extracted from chat context</p>
+                <p className="text-[10px] chat-fg-subtle mt-2 text-center">Extracted from chat context</p>
               </div>
             </div>
           </motion.div>
