@@ -21,6 +21,7 @@ interface ScholarshipInput {
   cgpa?: string | number
   familyIncomeINR?: number
   count?: number
+  userQuery?: string
 }
 
 interface SerperOrganic {
@@ -105,19 +106,28 @@ export async function POST(request: Request) {
     const uni = body.university || ''
     const year = new Date().getFullYear()
     const wantCount = Math.min(20, Math.max(3, body.count ?? 6))
+    const userQuery = (body.userQuery || '').trim()
 
     if (!process.env.SERPER_API_KEY) {
       return NextResponse.json({ options: FALLBACK, source: 'fallback' })
     }
 
-    const queries = [
-      `${uni} ${field} scholarship for Indian students apply ${year}`,
-      `${country} scholarship for Indian students ${field} master's apply ${year}`,
-      `government scholarship study ${country} Indian students ${year}`,
-      `merit scholarship ${field} ${country} ${year} Indian students`,
-      `fully funded scholarship ${country} ${field} master's Indian students`,
-      `private foundation scholarship ${country} Indian students ${year}`,
-    ].filter((q) => q.trim().length > 0)
+    const queries = (
+      userQuery
+        ? [
+            `${userQuery} scholarship Indian students ${country} ${year}`,
+            `${userQuery} ${field} scholarship ${country} apply ${year}`,
+            `${userQuery} scholarship ${country} ${year}`,
+          ]
+        : [
+            `${uni} ${field} scholarship for Indian students apply ${year}`,
+            `${country} scholarship for Indian students ${field} master's apply ${year}`,
+            `government scholarship study ${country} Indian students ${year}`,
+            `merit scholarship ${field} ${country} ${year} Indian students`,
+            `fully funded scholarship ${country} ${field} master's Indian students`,
+            `private foundation scholarship ${country} Indian students ${year}`,
+          ]
+    ).filter((q) => q.trim().length > 0)
 
     const all: SerperOrganic[] = []
     for (const q of queries) {
@@ -154,7 +164,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ options, source: 'serper' })
     }
 
-    const prompt = `You are an admission counsellor. From the live Google search results below pick the **${wantCount} best SCHOLARSHIPS** for an Indian student${uni ? ` targeting ${uni}` : ''} for a ${field} program in ${country}.
+    const prompt = `You are an admission counsellor. From the live Google search results below pick the **${wantCount} best SCHOLARSHIPS** for an Indian student${uni ? ` targeting ${uni}` : ''} for a ${field} program in ${country}.${userQuery ? `\nThe student is specifically looking for: "${userQuery}". Anchor every pick to that intent — drop options that don't fit.` : ''}
 
 ABSOLUTE RULES (any violation = drop the row)
 - Must be a SCHOLARSHIP / fellowship / grant for Indian or international students. Never pick education loans, news articles, or generic blog posts.

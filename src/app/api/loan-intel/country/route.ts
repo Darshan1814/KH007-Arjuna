@@ -120,35 +120,51 @@ export async function POST(request: Request) {
   try {
     const { country, course, loanAmountINR } = await request.json()
     const key = String(country || 'USA').toUpperCase().replace(/\s+/g, '')
-    const fallback = FALLBACK_BY_COUNTRY[key] || FALLBACK_BY_COUNTRY.USA
+    // Curated fallback ONLY for the original 10 countries; for anywhere else
+    // we ask Gemini and never silently substitute USA.
+    const fallback = FALLBACK_BY_COUNTRY[key] || null
 
     if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'mock') {
-      return NextResponse.json({ data: fallback, source: 'fallback' })
+      if (fallback) return NextResponse.json({ data: fallback, source: 'fallback' })
+      return NextResponse.json({ data: null, source: 'no-key' })
     }
 
-    const prompt = `For an Indian student taking an education loan of ₹${loanAmountINR || 4000000} to study "${course || 'Master\'s'}" in ${country}, return JSON only:
-- avgSalaryLocal: average starting salary in local currency (number)
+    const prompt = `You are a country financial advisor. The student is studying in **${country}** (and ONLY ${country} — do not reference any other country in your output, even if the country sounds geographically similar). The loan amount is ₹${loanAmountINR || 4000000} for "${course || "Master's"}" abroad.
+
+Return strict JSON ONLY in the shape below — every field MUST be specifically about ${country}, with the local currency of ${country}. If you don't have reliable data on ${country}, set numbers to 0 and write "Limited reliable data available for ${country}." in visaSummary, recommendedReason, and moneyTip; risks must be exactly 3 short, ${country}-specific items.
+
+- avgSalaryLocal: average starting salary in the local currency of ${country} (number)
 - avgSalaryINR: same converted to INR at current rates (number)
-- currency: 3-letter code (USD/GBP/CAD/AUD/EUR/SGD/NZD)
-- visaSummary: 2-3 sentences on post-study work visa reality
-- recommendedMaxLoanINR: max loan in INR you would advise so EMI stays under 35% of net salary (number)
-- recommendedReason: one short sentence on the recommendation
-- risks: array of exactly 3 short, specific financial risks for this country
-- moneyTip: one specific money-saving tip for this country (1-2 sentences)`
+- currency: 3-letter ISO code of ${country}'s currency
+- visaSummary: 2-3 sentences describing post-study work visa reality SPECIFICALLY in ${country}
+- recommendedMaxLoanINR: max loan in INR you would advise so EMI stays under 35% of net salary in ${country} (number)
+- recommendedReason: one short sentence on the recommendation, explicitly anchored to ${country}
+- risks: array of EXACTLY 3 short, specific financial risks for studying in ${country}
+- moneyTip: one specific money-saving tip for ${country} (1-2 sentences)`
 
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0.3 },
       })
       const text = response.text
       if (!text) throw new Error('empty')
       const parsed = JSON.parse(text)
-      if (!parsed?.avgSalaryINR) throw new Error('invalid')
+      // We accept zero-valued numeric responses (model says "no reliable
+      // data") as long as the structural shape is intact.
+      if (
+        parsed == null ||
+        typeof parsed !== 'object' ||
+        typeof parsed.currency !== 'string' ||
+        !Array.isArray(parsed.risks)
+      ) {
+        throw new Error('invalid')
+      }
       return NextResponse.json({ data: parsed, source: 'gemini' })
     } catch {
-      return NextResponse.json({ data: fallback, source: 'fallback' })
+      if (fallback) return NextResponse.json({ data: fallback, source: 'fallback' })
+      return NextResponse.json({ data: null, source: 'gemini-error' })
     }
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })

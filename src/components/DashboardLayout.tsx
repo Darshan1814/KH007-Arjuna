@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/lib/store'
 import { useTrack } from '@/lib/useTrack'
 import { filterNavSections } from '@/lib/navVisibility'
@@ -31,8 +31,8 @@ import NewsPage from './pages/NewsPage'
 import FormGuide from './pages/FormGuide'
 import DocumentVault from './pages/DocumentVault'
 import GrowthTools from './pages/GrowthTools'
-import NotificationsDropdown from './NotificationsDropdown'
 import NudgeEngine from './NudgeEngine'
+import Genie from './Genie'
 import ProfileWarningBanner from './ProfileWarningBanner'
 import GamificationPage from './pages/GamificationPage'
 import TimelinePage from './pages/TimelinePage'
@@ -54,46 +54,25 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
     items: [
       { icon: LayoutDashboard, label: 'Dashboard', page: 'dashboard' },
       { icon: Puzzle, label: 'Extension', page: 'extension' },
-      { icon: ClipboardList, label: 'Form Guide', page: 'form-guide' },
-    ]
-  },
-  {
-    label: 'Unique',
-    items: [
-      { icon: MessageCircle, label: 'AI Mentor', page: 'mentor-chat' },
+      { icon: Star, label: 'AI Education Journey', page: 'ai-journey' },
       { icon: Users, label: 'Expert Network', page: 'expert-directory' },
       { icon: MessageCircle, label: 'My Chats', page: 'user-expert-chat' },
-    ]
-  },
-  {
-    label: 'Explore',
-    items: [
-      { icon: Star, label: 'AI Education Journey', page: 'ai-journey' },
-      { icon: Award, label: 'Scholarships', page: 'scholarship-hunter' },
-      { icon: Newspaper, label: 'News', page: 'news' },
-    ]
-  },
-  {
-    label: 'Evaluate',
-    items: [
-      { icon: GraduationCap, label: 'College Match', page: 'college-match' },
       { icon: Target, label: 'Domestic Predictor', page: 'domestic-admission-predictor' },
       { icon: TrendingUp, label: 'ROI Calculator', page: 'roi-calculator' },
-    ]
-  },
-  {
-    label: 'Prepare',
-    items: [
       { icon: UserCheck, label: 'Interview Prep', page: 'interview-prep' },
       { icon: FileText, label: 'Document Vault', page: 'document-vault' },
-    ]
-  },
-  {
-    label: 'Finance',
-    items: [
       { icon: DollarSign, label: 'Loan Center', page: 'loan-center' },
       { icon: DollarSign, label: 'Domestic Loan Center', page: 'domestic-loan-center' },
       { icon: Calculator, label: 'EMI Calculator', page: 'emi-calculator' },
+    ]
+  },
+  {
+    label: 'More',
+    items: [
+      { icon: GraduationCap, label: 'College Match', page: 'college-match' },
+      { icon: Award, label: 'Scholarships', page: 'scholarship-hunter' },
+      { icon: Newspaper, label: 'News', page: 'news' },
+      { icon: ClipboardList, label: 'Form Guide', page: 'form-guide' },
     ]
   }
 ]
@@ -133,10 +112,60 @@ function PageContent({ page }: { page: PageType }) {
   }
 }
 
+// Pages that hold expensive search/AI state. Once visited they stay mounted
+// (display:none) so going to another page and back preserves their results
+// without re-firing API calls. Pages NOT in this list are mounted/unmounted
+// fresh each visit (default React behaviour).
+const PERSISTENT_PAGES: PageType[] = [
+  'dashboard',
+  'college-match',
+  'domestic-admission-predictor',
+  'domestic-college-detail',
+  'loan-center',
+  'domestic-loan-center',
+  'roi-calculator',
+  'scholarship-hunter',
+  'news',
+  'mentor-chat',
+  'ai-journey',
+  'interview-prep',
+  'expert-directory',
+  'user-expert-chat',
+]
+
+function PersistentPages({ currentPage, visited }: { currentPage: PageType; visited: Set<PageType> }) {
+  // Render every visited persistent page, but only show the current one.
+  const list: PageType[] = Array.from(visited)
+  return (
+    <>
+      {list.map((p) => (
+        <div key={p} style={{ display: p === currentPage ? 'block' : 'none' }}>
+          <PageContent page={p} />
+        </div>
+      ))}
+    </>
+  )
+}
+
 export default function DashboardLayout() {
   const { currentPage, setCurrentPage, sidebarOpen, toggleSidebar, profile, theme, toggleTheme } = useAppStore()
   const track = useTrack()
   const visibleNavSections = useMemo(() => filterNavSections(navSections, track), [track])
+
+  // Track which persistent pages have ever been visited; once visited they
+  // stay mounted (display:none) so navigating back preserves their state.
+  const [visitedPersistent, setVisitedPersistent] = useState<Set<PageType>>(() =>
+    new Set(PERSISTENT_PAGES.includes(currentPage) ? [currentPage] : []),
+  )
+  useEffect(() => {
+    if (PERSISTENT_PAGES.includes(currentPage) && !visitedPersistent.has(currentPage)) {
+      setVisitedPersistent((prev) => {
+        const next = new Set(prev)
+        next.add(currentPage)
+        return next
+      })
+    }
+  }, [currentPage, visitedPersistent])
 
   // Keep profiles.status in sync with whether this student tab is open.
   usePresence(profile?.id)
@@ -270,7 +299,6 @@ export default function DashboardLayout() {
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            <NotificationsDropdown />
             <button onClick={() => setCurrentPage('profile')} title={profile.name ? `${profile.name} — Profile` : 'Profile'}
               className="h-10 rounded-xl flex items-center gap-2 pl-1.5 pr-3 transition-all"
               style={{
@@ -302,10 +330,15 @@ export default function DashboardLayout() {
         {/* Page content */}
         <div className="p-4 sm:p-6">
           {currentPage !== 'ai-journey' && <ProfileWarningBanner />}
-          <PageContent page={currentPage} />
+          {/* Persistent pages stay mounted (display:none) so going to another page
+              and back preserves their search/AI state without re-firing API calls. */}
+          <PersistentPages currentPage={currentPage} visited={visitedPersistent} />
+          {/* Non-persistent pages render fresh on each visit. */}
+          {!PERSISTENT_PAGES.includes(currentPage) && <PageContent page={currentPage} />}
         </div>
       </main>
       <NudgeEngine />
+      <Genie />
     </div>
   )
 }

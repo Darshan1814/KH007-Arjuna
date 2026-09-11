@@ -34,17 +34,26 @@ const SCHEMA = {
 export async function POST(request: Request) {
   try {
     const { course, country } = await request.json()
-    const fallback = FALLBACK[country] || FALLBACK['USA']
+    const fallback = FALLBACK[country] || null
     const year = new Date().getFullYear()
 
     if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'mock') {
-      return NextResponse.json({ data: fallback, source: 'fallback' })
+      if (fallback) return NextResponse.json({ data: fallback, source: 'fallback' })
+      return NextResponse.json({ data: null, source: 'no-key' })
     }
 
     try {
-      const prompt = `What is the average starting salary in USD/GBP/CAD/AUD/EUR for a ${course || 'master\'s degree'} graduate from ${country} in ${year}? Give me: minimum salary, average salary, top 25% salary. Return only JSON: {min: number, avg: number, top: number, currency: string}.`
+      const prompt = `What is the average starting salary in the LOCAL CURRENCY of **${country}** (and ONLY ${country}) for a ${course || "master's degree"} graduate in ${year}?
+
+Return strict JSON: { "min": number, "avg": number, "top": number, "currency": string }
+- min: minimum / P25 starting salary in ${country}
+- avg: average / median starting salary in ${country}
+- top: top 25% / P75 starting salary in ${country}
+- currency: ISO 4217 3-letter code of the LOCAL currency of ${country} (e.g. CAD for Canada, INR for India, KRW for South Korea, AED for UAE).
+- Do NOT default to USD unless ${country} actually uses USD. Use the actual local currency.
+- All numbers must be specifically for ${country} — do not return numbers for any other country.`
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0.2 },
       })
@@ -53,7 +62,8 @@ export async function POST(request: Request) {
       const data = JSON.parse(text)
       return NextResponse.json({ data, source: 'gemini' })
     } catch (e) {
-      return NextResponse.json({ data: fallback, source: 'fallback' })
+      if (fallback) return NextResponse.json({ data: fallback, source: 'fallback' })
+      return NextResponse.json({ data: null, source: 'gemini-error' })
     }
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })

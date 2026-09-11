@@ -2,11 +2,10 @@
 
 // Scholarship Hunter — live, profile-aware scholarship discovery.
 // ----------------------------------------------------------------------------
-// Pulls 12 cards from /api/scholarships (Serper + Gemini extraction).
-// Defaults are seeded from the user's profile (target country, target field,
-// degree, CGPA). The student can change destination country / field / degree
-// inline; results re-fetch automatically. India is supported as a "domestic"
-// destination — the route handles that case gracefully.
+// Auto-pulls scholarship cards from /api/scholarships using the student's
+// profile defaults (target country, field, degree, CGPA, family income).
+// Free-text search submits a fresh server-side query; local filter narrows
+// the already-fetched cards without an extra API call.
 
 import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -87,18 +86,20 @@ export default function ScholarshipHunter({
   )
   const [field, setField] = useState<string>(profileFieldName)
   const [degree, setDegree] = useState<string>(profileDegreeName)
-  const [search, setSearch] = useState('')
+  const [localFilter, setLocalFilter] = useState('')
 
   const [results, setResults] = useState<ScholarshipResult[]>([])
   const [loading, setLoading] = useState(false)
-  const [source, setSource] = useState('')
+  // Local filter applies on top of fetched results.
+  // The free-text search box below also drives a server-side query.
+  const [serverQuery, setServerQuery] = useState('')
 
   const cgpa = profile.undergradCgpa || profile.cgpa
   const familyIncomeINR =
     (profile as any)?.familyAnnualIncomeINR ||
     parseNumber(profile.familyIncomeStr || '', 0)
 
-  const fetchScholarships = async () => {
+  const fetchScholarships = async (query?: string) => {
     setLoading(true)
     try {
       const r = await fetch('/api/scholarships', {
@@ -111,12 +112,12 @@ export default function ScholarshipHunter({
           cgpa,
           familyIncomeINR,
           count: 12,
+          userQuery: (query ?? serverQuery).trim() || undefined,
         }),
       })
       const j = await r.json()
       const list: ScholarshipResult[] = Array.isArray(j?.options) ? j.options : []
       setResults(list)
-      setSource(j?.source || '')
     } catch (e) {
       console.error(e)
     } finally {
@@ -124,14 +125,15 @@ export default function ScholarshipHunter({
     }
   }
 
-  // Auto-fetch on mount and when filters change.
+  // Auto-fetch on mount and when filters change. We deliberately exclude
+  // serverQuery from the dep list — the user submits that explicitly.
   useEffect(() => {
     fetchScholarships()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [country.code, field, degree])
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
+    const q = localFilter.trim().toLowerCase()
     if (!q) return results
     return results.filter(
       (r) =>
@@ -139,7 +141,7 @@ export default function ScholarshipHunter({
         r.provider.toLowerCase().includes(q) ||
         r.fitReason.toLowerCase().includes(q),
     )
-  }, [results, search])
+  }, [results, localFilter])
 
   const isDomestic = country.name.toLowerCase() === 'india'
 
@@ -159,14 +161,14 @@ export default function ScholarshipHunter({
               className="mt-1 text-sm"
               style={{ color: 'var(--foreground-secondary)' }}
             >
-              Live scholarship cards pulled from Google for your profile in {country.name}.
+              Live scholarship cards matched to your profile in {country.name}.
               {isDomestic
                 ? ' Switch to a foreign country above to plan your study-abroad funding.'
                 : ''}
             </p>
           </div>
           <button
-            onClick={fetchScholarships}
+            onClick={() => fetchScholarships()}
             disabled={loading}
             className="btn-secondary text-xs flex items-center gap-1 disabled:opacity-50"
           >
@@ -183,14 +185,6 @@ export default function ScholarshipHunter({
           <h3 className="text-sm font-bold" style={{ color: 'var(--foreground)' }}>
             Match my profile
           </h3>
-          {source && (
-            <span
-              className="ml-auto text-[10px] uppercase tracking-wider px-2 py-0.5 rounded"
-              style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--primary-light)' }}
-            >
-              {source}
-            </span>
-          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -204,21 +198,68 @@ export default function ScholarshipHunter({
           <PillSelect label="Degree" value={degree} options={DEGREE_OPTIONS} onChange={setDegree} />
         </div>
 
-        <div className="mt-3 relative">
+        {/* Server-side scholarship search by user input */}
+        <form
+          className="mt-3 relative"
+          onSubmit={(e) => {
+            e.preventDefault()
+            fetchScholarships(serverQuery)
+          }}
+        >
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
             style={{ color: 'var(--foreground-muted)' }}
           />
           <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter the 12 cards (name, provider, eligibility)…"
+            value={serverQuery}
+            onChange={(e) => setServerQuery(e.target.value)}
+            placeholder='Search scholarships e.g. "merit-based for women in STEM" or "fully funded PhD"'
+            className="input-field pl-10 pr-28 text-sm"
+          />
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            {serverQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setServerQuery('')
+                  fetchScholarships('')
+                }}
+                className="text-xs px-2 py-1 rounded-md"
+                style={{
+                  background: 'var(--surface)',
+                  color: 'var(--foreground-secondary)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                Clear
+              </button>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary text-xs flex items-center gap-1 disabled:opacity-50"
+            >
+              <Search className="w-3.5 h-3.5" /> Search
+            </button>
+          </div>
+        </form>
+
+        {/* Local filter on already-fetched results — no API call */}
+        <div className="mt-3 relative">
+          <Filter
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
+            style={{ color: 'var(--foreground-muted)' }}
+          />
+          <input
+            value={localFilter}
+            onChange={(e) => setLocalFilter(e.target.value)}
+            placeholder="Filter results below (name, provider, eligibility)…"
             className="input-field pl-10 pr-9 text-sm"
           />
-          {search && (
+          {localFilter && (
             <button
               type="button"
-              onClick={() => setSearch('')}
+              onClick={() => setLocalFilter('')}
               className="absolute right-2 top-1/2 -translate-y-1/2"
             >
               <X className="w-3.5 h-3.5" style={{ color: 'var(--foreground-muted)' }} />
@@ -291,7 +332,7 @@ export default function ScholarshipHunter({
         </div>
       )}
 
-      {/* Results grid (12 cards) */}
+      {/* Results grid */}
       {loading && results.length === 0 ? (
         <div className="card flex items-center gap-2 justify-center py-10">
           <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--primary)' }} />
