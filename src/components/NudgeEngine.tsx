@@ -6,9 +6,10 @@ import { StudentProfile } from '@/lib/types'
 
 export function calculateProfileCompleteness(profile: StudentProfile): number {
   const fields: (keyof StudentProfile)[] = [
-    'name', 'email', 'cgpa', 'greScore', 'targetCountry', 'targetProgram', 
-    'budgetLakhs', 'currentDegree', 'careerInterest', 'yearOfStudy', 
-    'familyIncome', 'targetIntake'
+    'name', 'mobile', 'dob', 'city', 'educationLevel', 
+    'undergradCollege', 'undergradDegree', 'undergradCgpa', 
+    'targetCountries', 'targetDegree', 'expectedBudgetStr', 
+    'studyGoal', 'docPassport', 'docTranscripts'
   ]
   
   let filled = 0
@@ -42,10 +43,11 @@ export default function NudgeEngine() {
       }
 
       // Nudge 2: High Dream Score Potential
-      if (profile.greScore > 320 && !profile.sopComplete && !notifications.some(n => n.title.includes('SOP'))) {
+      const parsedGre = parseFloat(profile.greScoreStr || profile.greScore?.toString() || '0')
+      if (parsedGre > 320 && profile.docSop !== 'Ready' && !profile.sopComplete && !notifications.some(n => n.title.includes('SOP'))) {
         addNotification({
           title: 'Strong Academic Profile!',
-          message: 'With a GRE of ' + profile.greScore + ', your SOP is the final key to a top admit. Use SOP Co-Pilot to finish it today.',
+          message: 'With a GRE of ' + parsedGre + ', your SOP is the final key to a top admit. Use SOP Co-Pilot to finish it today.',
           type: 'success',
           actionPage: 'sop-copilot'
         })

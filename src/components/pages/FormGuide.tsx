@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import Autocomplete from 'react-google-autocomplete'
 import {
   ClipboardList, Search, CheckCircle, Circle, ChevronDown, ChevronUp,
   Loader2, BookOpen, FileText, GraduationCap, DollarSign, Globe,
-  Shield, AlertCircle, Clock, Sparkles, ExternalLink, RotateCcw, Info
+  Shield, AlertCircle, Clock, Sparkles, ExternalLink, RotateCcw, Info, PlayCircle
 } from 'lucide-react'
 
 interface Step {
@@ -28,6 +29,13 @@ interface Guide {
   tips?: string[]
   estimatedCostINR?: string
   applicationFee?: string
+  videos?: {
+    title: string
+    link: string
+    snippet: string
+    imageUrl: string
+    channel: string
+  }[]
 }
 
 interface SavedGuide {
@@ -227,8 +235,23 @@ export default function FormGuide() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
             <label className="text-sm font-medium block mb-1" style={{ color: 'var(--foreground)' }}>University Name</label>
-            <input className="input-field" placeholder="e.g. Stanford University"
-              value={universityName} onChange={e => setUniversityName(e.target.value)} />
+            <Autocomplete
+              apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+              onPlaceSelected={(place) => {
+                if (place?.name) setUniversityName(place.name)
+                // Extract country automatically
+                const countryObj = place?.address_components?.find((c: any) => c.types.includes('country'))
+                if (countryObj?.long_name) {
+                  setSelectedCountry(countryObj.long_name)
+                  setCountrySearch('')
+                }
+              }}
+              options={{ types: ['establishment'] }}
+              className="input-field"
+              placeholder="e.g. Stanford University"
+              defaultValue={universityName}
+              onChange={(e: any) => setUniversityName(e.target.value)}
+            />
           </div>
           <div>
             <label className="text-sm font-medium block mb-1" style={{ color: 'var(--foreground)' }}>Program / Degree</label>
@@ -493,9 +516,46 @@ export default function FormGuide() {
             )}
           </div>
 
+          {/* Helpful Video Guides */}
+          {currentGuide.guide.videos && currentGuide.guide.videos.length > 0 && (
+            <div className="mt-4">
+              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--foreground)' }}>
+                <PlayCircle className="w-5 h-5" style={{ color: '#ef4444' }} /> Helpful Video Guides
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {currentGuide.guide.videos.map((video, i) => (
+                  <a key={i} href={video.link} target="_blank" rel="noopener noreferrer"
+                    className="card flex gap-3 hover:border-[#ef4444] transition-all p-3 group bg-black/10">
+                    <div className="relative w-24 h-16 rounded overflow-hidden flex-shrink-0 bg-black/20">
+                      {video.imageUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={video.imageUrl} alt={video.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <PlayCircle className="w-6 h-6 text-white/50" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <PlayCircle className="w-6 h-6 text-white drop-shadow-md" />
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                      <div className="text-xs font-semibold line-clamp-2" style={{ color: 'var(--foreground)' }}>
+                        {video.title}
+                      </div>
+                      <div className="text-[10px] mt-1 text-red-500/80 font-medium truncate">
+                        {video.channel || 'YouTube'}
+                      </div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Reset */}
           <button onClick={() => setCurrentGuide(null)}
-            className="btn-secondary flex items-center gap-2 text-sm">
+            className="btn-secondary flex items-center gap-2 text-sm mt-4">
             <RotateCcw className="w-4 h-4" /> Search Another University
           </button>
         </motion.div>

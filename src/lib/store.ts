@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { StudentProfile, ChatMessage, PageType, Notification } from './types'
+import { User } from '@supabase/supabase-js'
 
 export type ThemeMode = 'dark' | 'light'
 
@@ -16,6 +17,10 @@ interface AppState {
   theme: ThemeMode
   toggleTheme: () => void
   setTheme: (theme: ThemeMode) => void
+
+  // Auth
+  user: User | null
+  setUser: (user: User | null) => void
 
   // Student Profile
   profile: StudentProfile
@@ -101,6 +106,10 @@ export const useAppStore = create<AppState>()(
         })),
       setTheme: (theme) => set({ theme }),
 
+      // Auth
+      user: null,
+      setUser: (user) => set({ user }),
+
       // Profile
       profile: defaultProfile,
       updateProfile: (updates) =>
@@ -183,6 +192,7 @@ export const useAppStore = create<AppState>()(
     {
       name: 'edufinai-storage',
       partialize: (state) => ({
+        user: state.user,
         profile: state.profile,
         isOnboarded: state.isOnboarded,
         chatMessages: state.chatMessages,

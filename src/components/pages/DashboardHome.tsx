@@ -4,14 +4,26 @@ import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
 import { universities } from '@/lib/mock-data'
-import { calculateDreamScore, getAdmissionProbability, formatINR, calculateEMI } from '@/lib/utils'
+import { calculateDreamScore, getAdmissionProbability, formatINR, calculateEMI, parseBudgetToLakhs, parseNumber } from '@/lib/utils'
 import {
   Target, TrendingUp, DollarSign, BookOpen, Shield,
   MessageCircle, ChevronRight, Bell, AlertTriangle,
   GraduationCap, Flame, Zap, ArrowUpRight, Trophy, Clock,
-  Search, FileText, UserCheck, Gift, Award
+  Search, FileText, UserCheck, Gift, Award, User, Briefcase, Globe, Wallet
 } from 'lucide-react'
 import { calculateProfileCompleteness } from '../NudgeEngine'
+
+const SnapshotCard = ({ title, icon: Icon, children }: any) => (
+  <div className="card p-4 flex flex-col gap-2 bg-surface/50 border border-border/50 hover:border-primary/30 transition-colors">
+    <div className="flex items-center gap-2 mb-1 text-primary-light">
+      <Icon className="w-4 h-4" />
+      <span className="font-semibold text-sm">{title}</span>
+    </div>
+    <div className="text-xs space-y-1 text-foreground-secondary">
+      {children}
+    </div>
+  </div>
+)
 
 export default function DashboardHome() {
   const { profile, setCurrentPage, updateProfile, notifications } = useAppStore()
@@ -25,25 +37,28 @@ export default function DashboardHome() {
     }
   }, [dreamScore, profile.dreamScore, updateProfile])
 
-  // Real INR calculations
-  const exchangeRate = 83.5
-  const totalBudgetINR = profile.budgetLakhs * 100000
-  const totalSavingsINR = profile.savingsLakhs * 100000
-  const loanNeededINR = Math.max(0, totalBudgetINR - totalSavingsINR)
+  // Parse financials from the new onboarding schema or fallback to legacy
+  const budgetLakhs = parseBudgetToLakhs(profile.expectedBudgetStr) || profile.budgetLakhs || 0
+  const totalBudgetINR = budgetLakhs * 100000
+  
+  // If user typed a loan estimate string, try to parse it, otherwise calculate based on budget
+  const userLoanEst = parseNumber(profile.loanEstimateStr, 0)
+  const savingsLakhs = parseNumber(profile.savingsLakhs, 5) // default 5L buffer
+  const loanNeededINR = userLoanEst > 0 ? userLoanEst : Math.max(0, totalBudgetINR - (savingsLakhs * 100000))
   const monthlyEMI = loanNeededINR > 0 ? calculateEMI(loanNeededINR, 10.5, 10) : 0
 
   const topMatches = useMemo(() => {
     return universities.slice(0, 6).map(u => ({
       ...u,
-      admission: getAdmissionProbability(profile.cgpa, profile.greScore, u.ranking),
-      tuitionINR: u.tuitionUSD * exchangeRate,
-      salaryINR: u.avgSalaryUSD * exchangeRate,
+      admission: getAdmissionProbability(profile.undergradCgpa || profile.cgpa, profile.greScoreStr || profile.greScore, u.ranking),
+      tuitionINR: u.tuitionUSD * 83.5,
+      salaryINR: u.avgSalaryUSD * 83.5,
     }))
-  }, [profile.cgpa, profile.greScore])
+  }, [profile.undergradCgpa, profile.cgpa, profile.greScoreStr, profile.greScore])
 
   const nextBestAction = useMemo(() => {
     const completeness = calculateProfileCompleteness(profile)
-    if (completeness < 70) return { text: 'Complete your profile to unlock loan rates', page: 'dashboard' as const, color: '#f59e0b' }
+    if (completeness < 70) return { text: 'Complete your profile to unlock loan rates', page: 'onboarding' as const, color: '#f59e0b' }
     if (profile.journeyStage === 'EXPLORER') return { text: 'Find universities for your profile', page: 'admission-predictor' as const, color: '#6366f1' }
     if (profile.journeyStage === 'RESEARCHER') return { text: 'Draft your SOP with AI Co-Pilot', page: 'sop-copilot' as const, color: '#ec4899' }
     if (profile.journeyStage === 'APPLICANT') return { text: 'Start your loan application', page: 'loan-apply' as const, color: '#10b981' }
@@ -61,6 +76,8 @@ export default function DashboardHome() {
     { icon: Shield, label: 'Visa Prep', page: 'visa-simulator' as const, color: '#8b5cf6' },
   ]
 
+  const targets = profile.targetCountries || profile.targetCountry || []
+
   return (
     <div className="max-w-6xl space-y-6">
       {/* Welcome */}
@@ -69,7 +86,7 @@ export default function DashboardHome() {
           Welcome back, {profile.name || 'Student'}! 👋
         </h1>
         <p style={{ color: 'var(--foreground-secondary)' }}>
-          Here&apos;s your study abroad journey at a glance.
+          Here&apos;s your personalized study abroad journey at a glance.
         </p>
       </div>
 
@@ -99,7 +116,7 @@ export default function DashboardHome() {
           </div>
           <div className="text-center mt-3">
             <div className="flex items-center justify-center gap-1 text-sm" style={{ color: 'var(--success)' }}>
-              <ArrowUpRight className="w-4 h-4" /> +45 this week
+              <ArrowUpRight className="w-4 h-4" /> Score Updated
             </div>
             <button onClick={() => setCurrentPage('career-navigator')}
               className="text-sm mt-2 flex items-center gap-1 mx-auto" style={{ color: 'var(--primary-light)' }}>
@@ -111,29 +128,35 @@ export default function DashboardHome() {
         {/* Academic */}
         <div className="stat-card">
           <div className="text-xs mb-1" style={{ color: 'var(--foreground-muted)' }}>Academic</div>
-          <div className="text-2xl font-bold" style={{ color: 'var(--foreground)' }}>{profile.cgpa}<span className="text-sm font-normal">/10</span></div>
-          <div className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>CGPA • GRE: {profile.greScore || 'N/A'}</div>
+          <div className="text-2xl font-bold" style={{ color: 'var(--foreground)' }}>
+            {profile.undergradCgpa || profile.cgpa || 'N/A'}<span className="text-sm font-normal">/10</span>
+          </div>
+          <div className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>
+            GRE: {profile.greScoreStr || profile.greScore || 'N/A'}
+          </div>
         </div>
 
         {/* Target */}
         <div className="stat-card">
           <div className="text-xs mb-1" style={{ color: 'var(--foreground-muted)' }}>Target</div>
-          <div className="text-2xl font-bold" style={{ color: 'var(--success)' }}>{profile.targetCountry.length} <span className="text-sm font-normal">countries</span></div>
-          <div className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>{profile.targetCountry.join(', ') || 'Not set'}</div>
+          <div className="text-2xl font-bold" style={{ color: 'var(--success)' }}>{targets.length} <span className="text-sm font-normal">countries</span></div>
+          <div className="text-xs truncate" style={{ color: 'var(--foreground-secondary)' }}>{targets.join(', ') || 'Not set'}</div>
         </div>
 
         {/* Budget in INR */}
         <div className="stat-card">
-          <div className="text-xs mb-1" style={{ color: 'var(--foreground-muted)' }}>Total Budget</div>
-          <div className="text-2xl font-bold" style={{ color: 'var(--foreground)' }}>{formatINR(totalBudgetINR)}</div>
-          <div className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>Savings: {formatINR(totalSavingsINR)}</div>
+          <div className="text-xs mb-1" style={{ color: 'var(--foreground-muted)' }}>Est. Budget</div>
+          <div className="text-2xl font-bold" style={{ color: 'var(--foreground)' }}>{totalBudgetINR > 0 ? formatINR(totalBudgetINR) : 'N/A'}</div>
+          <div className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>{profile.expectedBudgetStr || 'No budget set'}</div>
         </div>
 
         {/* Loan & EMI */}
         <div className="stat-card">
           <div className="text-xs mb-1" style={{ color: 'var(--foreground-muted)' }}>Loan Required</div>
-          <div className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{formatINR(loanNeededINR)}</div>
-          <div className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>EMI: {formatINR(monthlyEMI)}/mo @10.5%</div>
+          <div className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{loanNeededINR > 0 ? formatINR(loanNeededINR) : 'N/A'}</div>
+          <div className="text-xs" style={{ color: 'var(--foreground-secondary)' }}>
+            {monthlyEMI > 0 ? `Est EMI: ${formatINR(monthlyEMI)}/mo` : 'No loan needed'}
+          </div>
         </div>
 
         {/* Gamification */}
@@ -143,7 +166,7 @@ export default function DashboardHome() {
             <span className="streak-fire"><Flame className="w-4 h-4" /> {profile.streakDays}d</span>
             <span className="badge badge-primary"><Zap className="w-3 h-3 mr-1" />{profile.xpPoints} XP</span>
           </div>
-          <div className="text-xs mt-1" style={{ color: 'var(--foreground-secondary)' }}>{profile.badges.length} badges earned</div>
+          <div className="text-xs mt-1" style={{ color: 'var(--foreground-secondary)' }}>{profile.badges?.length || 0} badges earned</div>
         </div>
 
         {/* Scholarships Matches */}
@@ -156,8 +179,60 @@ export default function DashboardHome() {
         </div>
       </div>
 
+      {/* Profile Snapshot 9-Step Review */}
+      <div className="mt-8">
+        <div className="flex justify-between items-end mb-3">
+          <h2 className="text-base font-semibold flex items-center gap-2" style={{ color: 'var(--foreground)' }}>
+            <User className="w-4 h-4 text-primary" /> Your Profile Snapshot
+          </h2>
+          <button 
+            onClick={() => setCurrentPage('onboarding')}
+            className="text-xs text-primary hover:text-primary-light flex items-center gap-1"
+          >
+            Edit Profile <ChevronRight className="w-3 h-3" />
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <SnapshotCard title="Identity & Academics" icon={User}>
+            <p><strong>Education:</strong> {profile.educationLevel || 'N/A'}</p>
+            <p><strong>College:</strong> {profile.undergradCollege || 'N/A'}</p>
+            <p><strong>Degree:</strong> {profile.undergradDegree || 'N/A'}</p>
+            <p><strong>CGPA:</strong> {profile.undergradCgpa || profile.cgpa || 'N/A'}</p>
+          </SnapshotCard>
+          <SnapshotCard title="Work Experience" icon={Briefcase}>
+            <p><strong>Status:</strong> {profile.isWorkingProfessional || 'N/A'}</p>
+            <p><strong>Company:</strong> {profile.companyName || 'N/A'}</p>
+            <p><strong>Role:</strong> {profile.jobRole || 'N/A'}</p>
+            <p><strong>Years Exp:</strong> {profile.yearsExperience || profile.workExpYears || '0'}</p>
+          </SnapshotCard>
+          <SnapshotCard title="Study Goals" icon={Globe}>
+            <p><strong>Goal:</strong> {profile.studyGoal || 'N/A'}</p>
+            <p><strong>Destinations:</strong> {targets.join(', ') || 'N/A'}</p>
+            <p><strong>Degree:</strong> {profile.targetDegree || profile.targetProgram || 'N/A'}</p>
+            <p><strong>Intake:</strong> {profile.intakeTarget || 'N/A'}</p>
+          </SnapshotCard>
+          <SnapshotCard title="Exams & Universities" icon={BookOpen}>
+            <p><strong>GRE:</strong> {profile.greScoreStr || profile.greScore || 'N/A'} ({profile.greStatus || 'N/A'})</p>
+            <p><strong>IELTS/TOEFL:</strong> {profile.ieltsScore || profile.toeflScore || 'N/A'} ({profile.ieltsStatus || 'N/A'})</p>
+            <p className="truncate"><strong>Dream Unis:</strong> {(profile.dreamUniversities || []).join(', ') || 'None yet'}</p>
+          </SnapshotCard>
+          <SnapshotCard title="Financials" icon={Wallet}>
+            <p><strong>Funding:</strong> {profile.fundingSource || 'N/A'}</p>
+            <p><strong>Budget:</strong> {profile.expectedBudgetStr || 'N/A'}</p>
+            <p><strong>Loan Est:</strong> {profile.loanEstimateStr || 'N/A'}</p>
+            <p><strong>Collateral:</strong> {profile.collateralAvailableStr || 'N/A'}</p>
+          </SnapshotCard>
+          <SnapshotCard title="Documents" icon={FileText}>
+            <p><strong>Passport:</strong> {profile.docPassport || 'N/A'}</p>
+            <p><strong>Transcripts:</strong> {profile.docTranscripts || 'N/A'}</p>
+            <p><strong>SOP:</strong> {profile.docSop || 'N/A'}</p>
+            <p><strong>LORs:</strong> {profile.docLors || 'N/A'}</p>
+          </SnapshotCard>
+        </div>
+      </div>
+
       {/* Quick Actions */}
-      <div>
+      <div className="mt-8">
         <h2 className="text-base font-semibold mb-3" style={{ color: 'var(--foreground)' }}>Quick Actions</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
           {quickActions.map((action) => (
@@ -209,9 +284,6 @@ export default function DashboardHome() {
           </div>
         </motion.button>
       </div>
-
-      {/* Quick Actions */}
-      {/* ... keep existing ... */}
 
       {/* Smart Nudges */}
       <div>

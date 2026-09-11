@@ -2,6 +2,8 @@ export interface StudentProfile {
   id?: string
   name: string
   email?: string
+  
+  // Legacy fields (kept for backward compatibility with other components)
   cgpa: number
   greScore: number
   gmatScore?: number
@@ -37,6 +39,106 @@ export interface StudentProfile {
   existingLoans?: number
   priority?: 'placement' | 'research' | 'cost' | 'ranking'
   journeyStage: 'EXPLORER' | 'RESEARCHER' | 'APPLICANT' | 'LOAN_SEEKER' | 'SUBMITTED'
+
+  // Roles & Permissions
+  role?: 'student' | 'expert' | 'admin'
+
+  // EXPERT SPECIFIC FIELDS
+  expertSpecializations?: string[]
+  expertCountries?: string[]
+  kycStatus?: 'pending' | 'verified' | 'rejected'
+  kycRejectionReason?: string
+  rating?: number
+  studentsHelped?: number
+  responseTimeHrs?: number
+  earningsThisMonth?: number
+  sessionRate?: number
+  linkedinUrl?: string
+  bio?: string
+  kycDocuments?: { type: string, url: string, name: string }[]
+  avatar?: string
+
+  // NEW ONBOARDING FIELDS
+  mobile?: string
+  dob?: string
+  gender?: string
+  city?: string
+  state?: string
+  educationLevel?: string
+  
+  // Step 2
+  tenthMarks?: string
+  twelfthMarks?: string
+  twelfthStream?: string
+  undergradCollege?: string
+  undergradDegree?: string
+  undergradSpecialization?: string
+  undergradCgpa?: string
+  undergradGradYear?: string
+  hasBacklogs?: string
+  hasResearchPapers?: string
+  internshipsCount?: string
+  extracurricularRoles?: string
+  
+  // Step 3
+  isWorkingProfessional?: string
+  companyName?: string
+  industry?: string
+  jobRole?: string
+  yearsExperience?: string
+  currentCtc?: string
+  careerGap?: string
+  
+  // Step 4
+  studyGoal?: string
+  targetCountries?: string[]
+  targetDegree?: string
+  targetField?: string
+  applicationStage?: string
+  
+  // Step 5
+  greStatus?: string
+  gmatStatus?: string
+  ieltsStatus?: string
+  toeflStatus?: string
+  gateStatus?: string
+  gateScoreStr?: string
+  catStatus?: string
+  catScoreStr?: string
+  neetStatus?: string
+  examNextDate?: string
+  
+  // Step 6
+  dreamUniversities?: string[]
+  targetUniversitiesList?: string[]
+  safeUniversities?: string[]
+  preferenceFactors?: string[]
+  universityResearchStage?: string
+  
+  // Step 7
+  fundingSource?: string
+  expectedBudgetStr?: string
+  loanEstimateStr?: string
+  collateralAvailableStr?: string
+  familyIncomeStr?: string
+  coApplicantStr?: string
+  creditScoreStr?: string
+  
+  // Step 8
+  docPassport?: string
+  docTranscripts?: string
+  docLors?: string
+  docSop?: string
+  docResume?: string
+  docBankStatements?: string
+  docVisa?: string
+  
+  // Step 9
+  preferredLanguage?: string
+  notificationPreference?: string
+  contentInterest?: string[]
+  hearAboutUs?: string
+  referralCode?: string
 }
 
 export interface University {
@@ -74,6 +176,31 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+}
+
+export interface ChatMessageAttachment {
+  type: 'document' | 'image' | 'audio'
+  url: string
+  name: string
+}
+
+export interface ExpertMessage {
+  id: string
+  chatId: string
+  senderId: string
+  senderRole: 'student' | 'expert' | 'system'
+  content: string
+  timestamp: string
+  isRead: boolean
+  attachments?: ChatMessageAttachment[]
+}
+
+export interface ExpertChatSession {
+  id: string
+  studentId: string
+  expertId: string
+  lastMessageAt: string
+  status: 'active' | 'closed'
 }
 
 export interface CareerPath {
@@ -156,6 +283,24 @@ export type PageType =
   | 'gamification'
   | 'document-vault'
   | 'growth-tools'
+  | 'profile'
+  
+  // User Expert Network
+  | 'expert-directory'
+  | 'user-expert-chat'
+
+  // Expert Dashboard
+  | 'expert-home'
+  | 'expert-students'
+  | 'expert-chat'
+  | 'expert-kyc'
+  | 'expert-earnings'
+
+  // Admin Dashboard
+  | 'admin-analytics'
+  | 'admin-kyc'
+  | 'admin-users'
+  | 'admin-experts'
 
 // Loan Application types
 export type LoanAppStep = 'eligibility' | 'documents' | 'form' | 'tracking'

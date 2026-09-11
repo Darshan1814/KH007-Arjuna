@@ -7,7 +7,7 @@ import {
   DollarSign, Calculator, BookOpen, Shield, MessageCircle,
   Award, Users, Globe, Menu, X, Flame, Star, Zap, Newspaper,
   Sun, Moon, ClipboardList, Calendar, Trophy, CreditCard, UserCheck, Gift,
-  PenTool, FileText
+  PenTool, FileText, User, LogOut
 } from 'lucide-react'
 import type { PageType } from '@/lib/types'
 import DashboardHome from './pages/DashboardHome'
@@ -33,12 +33,18 @@ import GamificationPage from './pages/GamificationPage'
 import TimelinePage from './pages/TimelinePage'
 import InterviewPrep from './pages/InterviewPrep'
 import ReferralPage from './pages/ReferralPage'
+import ProfilePage from './pages/ProfilePage'
+import ExpertDirectory from './pages/ExpertDirectory'
+import UserExpertChat from './pages/UserExpertChat'
+import { createClient } from '@/lib/supabase/client'
+import toast from 'react-hot-toast'
 
 const navSections: { label: string; items: { icon: typeof LayoutDashboard; label: string; page: PageType }[] }[] = [
   {
     label: 'Main',
     items: [
       { icon: LayoutDashboard, label: 'Dashboard', page: 'dashboard' },
+      { icon: User, label: 'Profile', page: 'profile' },
       { icon: ClipboardList, label: 'Form Guide', page: 'form-guide' },
     ]
   },
@@ -47,6 +53,8 @@ const navSections: { label: string; items: { icon: typeof LayoutDashboard; label
     items: [
       { icon: Calendar, label: 'Timeline', page: 'timeline' },
       { icon: MessageCircle, label: 'AI Mentor', page: 'mentor-chat' },
+      { icon: Users, label: 'Expert Network', page: 'expert-directory' },
+      { icon: MessageCircle, label: 'My Chats', page: 'user-expert-chat' },
     ]
   },
   {
@@ -116,12 +124,22 @@ function PageContent({ page }: { page: PageType }) {
     case 'interview-prep': return <InterviewPrep />
     case 'referrals': return <ReferralPage />
     case 'growth-tools': return <GrowthTools />
+    case 'profile': return <ProfilePage />
+    case 'expert-directory': return <ExpertDirectory />
+    case 'user-expert-chat': return <UserExpertChat />
     default: return <DashboardHome />
   }
 }
 
 export default function DashboardLayout() {
   const { currentPage, setCurrentPage, sidebarOpen, toggleSidebar, profile, theme, toggleTheme } = useAppStore()
+
+  const handleLogout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    toast.success('Logged out successfully')
+    // page.tsx listener will handle redirection
+  }
 
   // Initial URL check for persistence
   useEffect(() => {
@@ -279,6 +297,10 @@ export default function DashboardLayout() {
             <button onClick={toggleTheme} className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
               style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
               {theme === 'dark' ? <Sun className="w-5 h-5" style={{ color: 'var(--accent)' }} /> : <Moon className="w-5 h-5" style={{ color: 'var(--primary)' }} />}
+            </button>
+            <button onClick={handleLogout} title="Logout" className="w-10 h-10 rounded-xl flex items-center justify-center transition-all text-danger hover:bg-danger/10"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <LogOut className="w-5 h-5" />
             </button>
           </div>
         </header>

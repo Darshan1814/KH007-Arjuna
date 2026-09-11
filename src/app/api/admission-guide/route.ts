@@ -2,21 +2,27 @@ export async function POST(request: Request) {
   try {
     const { universityName, program, country } = await request.json()
 
-    // Step 1: Search for admission info using Serper
+    // Step 1: Search for admission info using Serper (Text and Videos concurrently)
     const searchQuery = `${universityName} ${program} admission process requirements application form ${country} 2025 2026`
-    const searchResponse = await fetch('https://google.serper.dev/search', {
-      method: 'POST',
-      headers: {
-        'X-API-KEY': process.env.SERPER_API_KEY || '',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        q: searchQuery,
-        gl: 'in',
-        hl: 'en',
-        num: 10,
+    
+    const [searchResponse, videoResponse] = await Promise.all([
+      fetch('https://google.serper.dev/search', {
+        method: 'POST',
+        headers: {
+          'X-API-KEY': process.env.SERPER_API_KEY || '',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ q: searchQuery, gl: 'in', hl: 'en', num: 10 }),
       }),
-    })
+      fetch('https://google.serper.dev/videos', {
+        method: 'POST',
+        headers: {
+          'X-API-KEY': process.env.SERPER_API_KEY || '',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ q: `${universityName} ${program} application process international students`, gl: 'in', hl: 'en', num: 4 }),
+      })
+    ])
 
     let searchResults = ''
     if (searchResponse.ok) {
@@ -31,6 +37,18 @@ export async function POST(request: Request) {
       if (searchData.knowledgeGraph) {
         searchResults += `\n\nKnowledge Graph: ${JSON.stringify(searchData.knowledgeGraph)}`
       }
+    }
+
+    let videos = []
+    if (videoResponse.ok) {
+      const videoData = await videoResponse.json()
+      videos = (videoData.videos || []).slice(0, 4).map((v: any) => ({
+        title: v.title,
+        link: v.link,
+        snippet: v.snippet,
+        imageUrl: v.imageUrl,
+        channel: v.channel
+      }))
     }
 
     // Step 2: Use Groq to analyze and create structured admission guide
@@ -120,6 +138,7 @@ Please create a comprehensive admission guide based on these results.`
       cleanContent = cleanContent.trim()
       
       const guide = JSON.parse(cleanContent)
+      guide.videos = videos // Inject videos into the final guide
       return Response.json({ guide, searchResults: searchResults.slice(0, 500) })
     } catch {
       // If JSON parsing fails, return a structured fallback
@@ -133,6 +152,7 @@ Please create a comprehensive admission guide based on these results.`
           ],
           requirements: {},
           tips: ['Research thoroughly before applying'],
+          videos, // Inject videos even in fallback
         },
         raw: content,
       })

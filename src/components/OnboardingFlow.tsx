@@ -3,419 +3,573 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
-import { calculateDreamScore } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
 import {
-  GraduationCap, User, BookOpen, Globe, DollarSign,
-  ChevronRight, ChevronLeft, Sparkles, Check, Briefcase,
-  Target, Shield, Mail, Calendar, TrendingUp, AlertCircle
+  User, GraduationCap, Briefcase, Globe,
+  BookOpen, Building, Wallet, FileText, Settings,
+  ChevronRight, ChevronLeft, Loader2, Sparkles, Check, LogOut
 } from 'lucide-react'
+import { countries } from 'countries-list'
+import Autocomplete from 'react-google-autocomplete'
+import type { StudentProfile } from '@/lib/types'
+import { calculateDreamScore } from '@/lib/utils'
 
-const steps = [
-  { icon: User, title: 'Basic Info', subtitle: 'Personal details' },
-  { icon: BookOpen, title: 'Academics', subtitle: 'Scores & exams' },
-  { icon: Globe, title: 'Target', subtitle: 'Preferences' },
-  { icon: Shield, title: 'Financials', subtitle: 'Budget & loans' },
-  { icon: Target, title: 'Goals', subtitle: 'Career path' },
+const STEPS = [
+  { id: 1, title: 'Identity', icon: User },
+  { id: 2, title: 'Academics', icon: GraduationCap },
+  { id: 3, title: 'Work Exp', icon: Briefcase },
+  { id: 4, title: 'Destination', icon: Globe },
+  { id: 5, title: 'Exams', icon: BookOpen },
+  { id: 6, title: 'Universities', icon: Building },
+  { id: 7, title: 'Financials', icon: Wallet },
+  { id: 8, title: 'Documents', icon: FileText },
+  { id: 9, title: 'Preferences', icon: Settings },
 ]
 
-const countries = [
-  'US', 'UK', 'Canada', 'Germany', 'Australia', 'Europe', 'Singapore', 'Japan', 'South Korea'
-]
+const allCountries = Object.values(countries).map(c => c.name).sort()
 
-const intakes = ['Jan 2025', 'Sep 2025', 'Jan 2026', 'Sep 2026']
+// Define Input outside the main component so React doesn't unmount it on every keystroke
+const Input = ({ label, field, type = "text", placeholder = "", options = [] as string[], allowCustom = false, localData, updateLocal }: any) => {
+  const listId = `${field}-options`
+  
+  return (
+    <div className="mb-4">
+      <label className="block text-sm font-medium text-foreground-secondary mb-1">{label}</label>
+      {options.length > 0 && !allowCustom ? (
+        <select 
+          className="input-field" 
+          value={localData[field as keyof StudentProfile] as string || ''}
+          onChange={(e) => updateLocal(field, e.target.value)}
+        >
+          <option value="">Select...</option>
+          {options.map((o: string) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : (
+        <>
+          <input 
+            type={type} 
+            list={allowCustom && options.length > 0 ? listId : undefined}
+            placeholder={placeholder}
+            className="input-field"
+            value={localData[field as keyof StudentProfile] as string || ''}
+            onChange={(e) => updateLocal(field, e.target.value)}
+          />
+          {allowCustom && options.length > 0 && (
+            <datalist id={listId}>
+              {options.map((o: string) => <option key={o} value={o} />)}
+            </datalist>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
 
-const budgetRanges = [
-  { label: 'Under 30L', value: 25 },
-  { label: '30-50L', value: 40 },
-  { label: '50-80L', value: 65 },
-  { label: '80L+', value: 90 },
-]
+const MultiAutocomplete = ({ label, field, placeholder, localData, updateLocal }: any) => {
+  const list: string[] = localData[field as keyof StudentProfile] as string[] || []
+  const inputId = `multi-auto-${field}`
 
-const degrees = [
-  'B.Tech/BE', 'BSc', 'BCA', 'BCom', 'BA', 'BBA', 'MBBS', 'Other'
-]
-
-const priorities = [
-  { id: 'placement', label: 'Placement', icon: TrendingUp },
-  { id: 'research', label: 'Research', icon: BookOpen },
-  { id: 'cost', label: 'Cost', icon: DollarSign },
-  { id: 'ranking', label: 'Ranking', icon: Star },
-]
-
-import { Star } from 'lucide-react'
-
-export default function OnboardingFlow() {
-  const { updateProfile, setOnboarded, setCurrentPage, profile } = useAppStore()
-  const [step, setStep] = useState(0)
-  const [form, setForm] = useState({
-    name: profile.name || '',
-    email: profile.email || '',
-    yearOfStudy: profile.yearOfStudy || 4,
-    currentDegree: profile.currentDegree || '',
-    cgpa: profile.cgpa || 0,
-    greScore: profile.greScore || 0,
-    gmatScore: profile.gmatScore || 0,
-    ieltsScore: profile.ieltsScore || 0,
-    toeflScore: profile.toeflScore || 0,
-    backlogs: profile.backlogs || 0,
-    targetCountry: profile.targetCountry || [] as string[],
-    budgetLakhs: profile.budgetLakhs || 30,
-    targetIntake: profile.targetIntake || 'Sep 2025',
-    familyIncome: profile.familyIncome || 1000000,
-    hasCoApplicant: profile.hasCoApplicant ?? true,
-    collateralType: profile.collateralType || 'none' as 'property' | 'FD' | 'none',
-    existingLoans: profile.existingLoans || 0,
-    careerInterest: profile.careerInterest || '',
-    priority: profile.priority || 'placement' as 'placement' | 'research' | 'cost' | 'ranking',
-  })
-
-  const update = (key: string, value: any) => {
-    setForm(prev => ({ ...prev, [key]: value }))
-  }
-
-  const toggleCountry = (c: string) => {
-    setForm(prev => ({
-      ...prev,
-      targetCountry: prev.targetCountry.includes(c)
-        ? prev.targetCountry.filter(x => x !== c)
-        : [...prev.targetCountry, c]
-    }))
-  }
-
-  const finish = () => {
-    const profileData = {
-      ...form,
-      workExpYears: 0,
-      researchPapers: 0,
-      extracurriculars: 2,
-      sopComplete: false,
-      lorCount: 0,
-      loanEligible: true,
-      currentUniversity: '',
-      universitiesFinalized: 0,
-      applicationsSubmitted: 0,
-      visaDocsReady: false,
-      streakDays: 1,
-      xpPoints: 100,
-      badges: ['First Step'],
-      dreamScore: 0,
-      savingsLakhs: 0,
-      coBorrowerIncome: form.familyIncome,
+  const handleAdd = (placeName: string) => {
+    if (!placeName) return
+    if (!list.includes(placeName)) {
+      updateLocal(field, [...list, placeName])
     }
-    profileData.dreamScore = calculateDreamScore(profileData)
-    updateProfile(profileData)
-    setOnboarded(true)
-    setCurrentPage('dashboard')
+  }
+
+  const handleRemove = (item: string) => {
+    updateLocal(field, list.filter(i => i !== item))
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-[#0a0b14]">
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-500/10 blur-[120px] rounded-full" />
-        <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-cyan-500/10 blur-[120px] rounded-full" />
-      </div>
+    <div className="mb-4">
+      <label className="block text-sm font-medium text-foreground-secondary mb-1">{label}</label>
+      <Autocomplete
+        id={inputId}
+        apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+        onPlaceSelected={(place) => {
+          if (place.name) {
+            handleAdd(place.name)
+            setTimeout(() => {
+              const el = document.getElementById(inputId) as HTMLInputElement
+              if (el) el.value = ''
+            }, 10)
+          }
+        }}
+        options={{ types: ['establishment'] }}
+        className="input-field"
+        placeholder={placeholder}
+        onKeyDown={(e: any) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            handleAdd(e.target.value)
+            e.target.value = ''
+          }
+        }}
+      />
+      {list.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-2">
+          {list.map(item => (
+            <span key={item} className="inline-flex items-center gap-1 bg-primary/10 text-primary px-3 py-1 rounded-full text-sm">
+              {item}
+              <button 
+                type="button"
+                onClick={(e) => { e.preventDefault(); handleRemove(item); }} 
+                className="hover:text-primary-dark ml-1 font-bold"
+              >
+                &times;
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-2xl bg-[#161725] border border-white/10 rounded-3xl shadow-2xl overflow-hidden relative z-10">
-        
-        {/* Header */}
-        <div className="p-8 border-b border-white/5">
-          <div className="flex items-center gap-2 mb-8">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center">
-              <GraduationCap className="text-white w-6 h-6" />
-            </div>
-            <span className="text-xl font-bold text-white tracking-tight">EduFin<span className="text-indigo-400">AI</span></span>
-          </div>
+export default function OnboardingFlow() {
+  const { profile, updateProfile, setOnboarded, setCurrentPage, user, setUser } = useAppStore()
+  const [currentStep, setCurrentStep] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [localData, setLocalData] = useState<Partial<StudentProfile>>({ ...profile })
+
+  const supabase = createClient()
+
+  const handleNext = () => {
+    if (currentStep < 9) {
+      setCurrentStep(s => s + 1)
+    } else {
+      finishOnboarding()
+    }
+  }
+
+  const handleSkip = () => {
+    if (currentStep < 9) setCurrentStep(s => s + 1)
+    else finishOnboarding()
+  }
+
+  const handlePrev = () => {
+    if (currentStep > 1) setCurrentStep(s => s - 1)
+  }
+
+  const handleLogout = async () => {
+    setLoading(true)
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    setUser(null)
+    setCurrentPage('landing')
+    setLoading(false)
+  }
+
+  const updateLocal = (field: keyof StudentProfile, value: any) => {
+    setLocalData(prev => ({ ...prev, [field]: value }))
+  }
+
+  const finishOnboarding = async () => {
+    setLoading(true)
+    
+    // Auto calculate some fields for legacy support
+    const dreamScore = calculateDreamScore(localData as StudentProfile)
+    const updatedProfile = { ...localData, dreamScore, isOnboarded: true }
+    
+    try {
+      if (user) {
+        const dbPayload = {
+          name: updatedProfile.name,
+          mobile: updatedProfile.mobile,
+          dob: updatedProfile.dob,
+          gender: updatedProfile.gender,
+          city: updatedProfile.city,
+          state: updatedProfile.state,
+          education_level: updatedProfile.educationLevel,
           
-          <div className="flex justify-between relative overflow-x-auto pb-4 sm:pb-0 scrollbar-hide">
-            <div className="absolute top-4 left-0 right-0 h-[2px] bg-white/5 -z-0 min-w-[400px]" />
-            <div className="flex justify-between w-full min-w-[400px]">
-              {steps.map((s, i) => (
-                <div key={i} className="flex flex-col items-center gap-2 relative z-10">
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-500 ${
-                    i <= step ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]' : 'bg-[#1f2135] text-white/30'
-                  }`}>
-                    {i < step ? <Check className="w-5 h-5" /> : i + 1}
-                  </div>
-                  <span className={`text-[10px] font-medium uppercase tracking-wider whitespace-nowrap ${i <= step ? 'text-indigo-400' : 'text-white/20'}`}>
-                    {s.title}
-                  </span>
-                </div>
-              ))}
+          tenth_marks: updatedProfile.tenthMarks,
+          twelfth_marks: updatedProfile.twelfthMarks,
+          twelfth_stream: updatedProfile.twelfthStream,
+          undergrad_college: updatedProfile.undergradCollege,
+          undergrad_degree: updatedProfile.undergradDegree,
+          undergrad_specialization: updatedProfile.undergradSpecialization,
+          undergrad_cgpa: updatedProfile.undergradCgpa,
+          undergrad_grad_year: updatedProfile.undergradGradYear,
+          backlogs: updatedProfile.hasBacklogs,
+          research_papers: updatedProfile.hasResearchPapers,
+          internships: updatedProfile.internshipsCount,
+          extracurriculars: updatedProfile.extracurricularRoles,
+          
+          is_working_professional: updatedProfile.isWorkingProfessional,
+          company_name: updatedProfile.companyName,
+          industry: updatedProfile.industry,
+          job_role: updatedProfile.jobRole,
+          years_experience: updatedProfile.yearsExperience,
+          current_ctc: updatedProfile.currentCtc,
+          career_gap: updatedProfile.careerGap,
+          
+          study_goal: updatedProfile.studyGoal,
+          target_countries: updatedProfile.targetCountries,
+          target_degree: updatedProfile.targetDegree,
+          target_field: updatedProfile.targetField,
+          intake_target: updatedProfile.intakeTarget,
+          application_stage: updatedProfile.applicationStage,
+          
+          gre_status: updatedProfile.greStatus,
+          gmat_status: updatedProfile.gmatStatus,
+          ielts_status: updatedProfile.ieltsStatus,
+          toefl_status: updatedProfile.toeflStatus,
+          gate_status: updatedProfile.gateStatus,
+          
+          dream_universities: updatedProfile.dreamUniversities,
+          target_universities: updatedProfile.targetUniversitiesList,
+          safe_universities: updatedProfile.safeUniversities,
+          preference_factors: updatedProfile.preferenceFactors,
+          university_research_stage: updatedProfile.universityResearchStage,
+          
+          funding_source: updatedProfile.fundingSource,
+          
+          doc_passport: updatedProfile.docPassport,
+          
+          preferred_language: updatedProfile.preferredLanguage,
+          is_onboarded: true
+        }
+
+        const { error } = await supabase
+          .from('profiles')
+          .update(dbPayload)
+          .eq('id', user.id)
+
+        if (error) console.error("Supabase Save Error:", error)
+      }
+    } catch (e) {
+      console.error(e)
+    }
+
+    updateProfile(updatedProfile)
+    setOnboarded(true)
+    setCurrentPage('dashboard')
+    setLoading(false)
+  }
+
+  // Pre-bind common props to save repetitive typing in renderStep
+  const boundInput = (props: any) => <Input {...props} localData={localData} updateLocal={updateLocal} />
+  const boundMultiAuto = (props: any) => <MultiAutocomplete {...props} localData={localData} updateLocal={updateLocal} />
+
+  const renderStep = () => {
+    switch (currentStep) {
+      case 1:
+        return (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><User /> Basic Identity</h2>
+            {boundInput({ label: "Full Name", field: "name" })}
+            {boundInput({ label: "Mobile Number", field: "mobile" })}
+            {boundInput({ label: "Date of Birth", field: "dob", type: "date" })}
+            {boundInput({ label: "Gender", field: "gender", options: ['Male', 'Female', 'Other'] })}
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-foreground-secondary mb-1">City / Location</label>
+              <Autocomplete
+                apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+                onPlaceSelected={(place) => {
+                  let city = ''
+                  let state = ''
+                  place.address_components?.forEach(c => {
+                    if (c.types.includes('locality')) city = c.long_name
+                    if (c.types.includes('administrative_area_level_1')) state = c.long_name
+                  })
+                  updateLocal('city', city || place.name)
+                  updateLocal('state', state)
+                }}
+                options={{ types: ['(cities)'] }}
+                className="input-field"
+                placeholder="Search your city..."
+                defaultValue={localData.city || ''}
+              />
             </div>
+            
+            {boundInput({ label: "Current Education Level", field: "educationLevel", options: ['Undergraduate', 'Graduate', 'Working Professional'] })}
           </div>
+        )
+      case 2:
+        return (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><GraduationCap /> Academic Background</h2>
+            <div className="grid grid-cols-2 gap-4">
+              {boundInput({ label: "10th Percentage / CGPA", field: "tenthMarks" })}
+              {boundInput({ label: "12th Percentage / CGPA", field: "twelfthMarks" })}
+            </div>
+            {boundInput({ label: "12th Stream", field: "twelfthStream", options: ['Science', 'Commerce', 'Arts'] })}
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-foreground-secondary mb-1">Undergraduate College</label>
+              <Autocomplete
+                apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+                onPlaceSelected={(place) => {
+                  updateLocal('undergradCollege', place.name || '')
+                }}
+                options={{ types: ['establishment'] }}
+                className="input-field"
+                placeholder="Search your college or university..."
+                defaultValue={localData.undergradCollege || ''}
+              />
+            </div>
+
+            {boundInput({ 
+              label: "Degree (e.g. B.Tech)", 
+              field: "undergradDegree", 
+              options: ['B.Tech', 'B.E.', 'B.Sc', 'BBA', 'B.Com', 'BA', 'B.Arch', 'MBBS'], 
+              allowCustom: true 
+            })}
+            {boundInput({ 
+              label: "Specialization / Major", 
+              field: "undergradSpecialization", 
+              options: ['Computer Science', 'Information Technology', 'Data Science', 'Mechanical', 'Electrical', 'Electronics & Comm.', 'Civil', 'Finance', 'Marketing', 'Business Analytics'], 
+              allowCustom: true 
+            })}
+            {boundInput({ label: "Current CGPA / Percentage", field: "undergradCgpa" })}
+            {boundInput({ 
+              label: "Graduation Year", 
+              field: "undergradGradYear", 
+              type: "number", 
+              options: ['2023', '2024', '2025', '2026', '2027', '2028'], 
+              allowCustom: true 
+            })}
+            {boundInput({ label: "Any Backlogs?", field: "hasBacklogs", options: ['Yes', 'No', 'Cleared'] })}
+            {boundInput({ label: "Research Papers / Publications?", field: "hasResearchPapers", options: ['Yes', 'No'] })}
+            {boundInput({ label: "Internships Count", field: "internshipsCount", type: "number" })}
+            {boundInput({ label: "Extracurriculars / Leadership", field: "extracurricularRoles" })}
+          </div>
+        )
+      case 3:
+        return (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Briefcase /> Work Experience</h2>
+            {boundInput({ label: "Are you a Working Professional?", field: "isWorkingProfessional", options: ['Yes', 'No'] })}
+            {localData.isWorkingProfessional === 'Yes' && (
+              <div className="space-y-4 pl-4 border-l-2 border-primary/20 mt-4">
+                {boundInput({ label: "Company Name", field: "companyName" })}
+                {boundInput({ label: "Industry / Domain", field: "industry" })}
+                {boundInput({ label: "Job Role / Designation", field: "jobRole" })}
+                {boundInput({ label: "Years of Experience", field: "yearsExperience", type: "number" })}
+                {boundInput({ label: "Current Annual CTC (₹)", field: "currentCtc" })}
+                {boundInput({ label: "Any Career Gap?", field: "careerGap", options: ['No', 'Yes'] })}
+              </div>
+            )}
+          </div>
+        )
+      case 4:
+        return (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Globe /> Target Destination</h2>
+            {boundInput({ label: "Study Goal", field: "studyGoal", options: ['Abroad', 'Domestic (India)', 'Both'] })}
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-foreground-secondary mb-1">Target Countries (Multi-select)</label>
+              <select 
+                multiple
+                className="input-field min-h-[120px]"
+                value={localData.targetCountries || []}
+                onChange={(e) => {
+                  const opts = Array.from(e.target.selectedOptions, option => option.value)
+                  updateLocal('targetCountries', opts)
+                  // Legacy sync
+                  updateLocal('targetCountry', opts)
+                }}
+              >
+                <option value="USA">USA 🇺🇸</option>
+                <option value="UK">UK 🇬🇧</option>
+                <option value="Canada">Canada 🇨🇦</option>
+                <option value="Australia">Australia 🇦🇺</option>
+                <option value="Germany">Germany 🇩🇪</option>
+                <option value="Ireland">Ireland 🇮🇪</option>
+                <option value="Singapore">Singapore 🇸🇬</option>
+                <option value="Netherlands">Netherlands 🇳🇱</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            {boundInput({ label: "Target Degree", field: "targetDegree", options: ['MS / M.Tech', 'MBA / PGDM', 'MIM', 'MPH', 'MFA', 'LLM', 'PhD'] })}
+            {boundInput({ label: "Target Field / Domain", field: "targetField", options: ['Computer Science / AI', 'Business / Finance', 'Engineering', 'Life Sciences', 'Design', 'Other'] })}
+            {boundInput({ label: "Intake Target", field: "intakeTarget", options: ['Fall 2025', 'Spring 2026', 'Fall 2026', 'Still Deciding'] })}
+            {boundInput({ label: "Application Stage", field: "applicationStage", options: ['Just Exploring', 'Shortlisting Universities', 'Appearing for Exams', 'Applications in Progress', 'Admits Received'] })}
+          </div>
+        )
+      case 5:
+        return (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><BookOpen /> Exam Profile</h2>
+            {boundInput({ label: "GRE Status", field: "greStatus", options: ['Appeared', 'Planning', 'Not Required', 'NA'] })}
+            {localData.greStatus === 'Appeared' && boundInput({ label: "GRE Score", field: "greScoreStr" })}
+            
+            {boundInput({ label: "GMAT Status", field: "gmatStatus", options: ['Appeared', 'Planning', 'Not Required', 'NA'] })}
+            {localData.gmatStatus === 'Appeared' && boundInput({ label: "GMAT Score", field: "gmatScoreStr" })}
+            
+            {boundInput({ label: "IELTS Status", field: "ieltsStatus", options: ['Appeared', 'Planning', 'NA'] })}
+            {localData.ieltsStatus === 'Appeared' && boundInput({ label: "IELTS Score", field: "ieltsScore" })}
+            
+            {boundInput({ label: "TOEFL Status", field: "toeflStatus", options: ['Appeared', 'Planning', 'NA'] })}
+            {localData.toeflStatus === 'Appeared' && boundInput({ label: "TOEFL Score", field: "toeflScore" })}
+            
+            {boundInput({ label: "Next Planned Exam Date", field: "examNextDate", type: "date" })}
+          </div>
+        )
+      case 6:
+        return (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Building /> University Preferences</h2>
+            {boundMultiAuto({ label: "Dream Universities (e.g., MIT, Stanford)", field: "dreamUniversities", placeholder: "Search and select..." })}
+            {boundMultiAuto({ label: "Realistic Target Universities", field: "targetUniversitiesList", placeholder: "Search and select..." })}
+            {boundMultiAuto({ label: "Safe Universities", field: "safeUniversities", placeholder: "Search and select..." })}
+            
+            {boundInput({ label: "Top Preference Factor", field: "topPreferenceFactor", options: ['Ranking', 'ROI / Salary', 'Location', 'Scholarships', 'Curriculum', 'Alumni'] })}
+            {boundInput({ label: "University Research Stage", field: "universityResearchStage", options: ['Haven\'t started', 'Casually browsing', 'Shortlist ready', 'Already applied'] })}
+          </div>
+        )
+      case 7:
+        return (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Wallet /> Financial Profile</h2>
+            {boundInput({ label: "Who is funding your education?", field: "fundingSource", options: ['Self / Family', 'Education Loan', 'Scholarship', 'Mix of above'] })}
+            {boundInput({ label: "Expected Total Budget (₹)", field: "expectedBudgetStr", options: ['Below 20L', '20L – 40L', '40L – 60L', '60L – 80L', '80L+'] })}
+            {boundInput({ label: "Loan Requirement Estimate (₹)", field: "loanEstimateStr" })}
+            {boundInput({ label: "Collateral Available?", field: "collateralAvailableStr", options: ['Yes', 'No', 'Not Sure'] })}
+            {boundInput({ label: "Annual Family Income (₹)", field: "familyIncomeStr", options: ['Below 3L', '3L – 6L', '6L – 10L', '10L – 20L', '20L+'] })}
+            {boundInput({ label: "Co-applicant Available?", field: "coApplicantStr", options: ['Yes', 'No'] })}
+            {boundInput({ label: "Credit Score", field: "creditScoreStr", options: ['Below 650', '650–750', '750+', 'Don\'t know'] })}
+          </div>
+        )
+      case 8:
+        return (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><FileText /> Documents Status</h2>
+            {boundInput({ label: "Passport", field: "docPassport", options: ['Ready', 'In Progress', 'Not Started'] })}
+            {boundInput({ label: "Transcripts", field: "docTranscripts", options: ['Ready', 'In Progress', 'Not Started'] })}
+            {boundInput({ label: "LORs", field: "docLors", options: ['Ready', 'In Progress', 'Not Started'] })}
+            {boundInput({ label: "SOP", field: "docSop", options: ['Ready', 'In Progress', 'Not Started'] })}
+            {boundInput({ label: "Resume/CV", field: "docResume", options: ['Ready', 'In Progress', 'Not Started'] })}
+            {boundInput({ label: "Bank Statements", field: "docBankStatements", options: ['Ready', 'In Progress', 'Not Started'] })}
+            {boundInput({ label: "Visa", field: "docVisa", options: ['Ready', 'In Progress', 'Not Started', 'NA'] })}
+          </div>
+        )
+      case 9:
+        return (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Settings /> Preferences & Personalization</h2>
+            {boundInput({ label: "Preferred Language", field: "preferredLanguage", options: ['English', 'Hindi', 'Regional'] })}
+            {boundInput({ label: "Notification Preference", field: "notificationPreference", options: ['WhatsApp', 'Email', 'App'] })}
+            {boundInput({ label: "How did you hear about us?", field: "hearAboutUs", options: ['Instagram', 'YouTube', 'Friend', 'College', 'Other'] })}
+            {boundInput({ label: "Referral Code (if any)", field: "referralCode" })}
+          </div>
+        )
+      default:
+        return null
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      {/* Background Orbs */}
+      <div className="absolute inset-0 bg-grid z-0 opacity-50" />
+      <div className="glow-orb bg-primary" style={{ top: '-10%', left: '-10%', width: '40vw', height: '40vw' }} />
+      <div className="glow-orb bg-secondary" style={{ bottom: '-10%', right: '-10%', width: '30vw', height: '30vw' }} />
+
+      <div className="w-full max-w-3xl z-10">
+        <div className="mb-8 flex flex-col items-center">
+          <div className="text-primary mb-2">
+            <Sparkles className="w-10 h-10 animate-pulse-glow" />
+          </div>
+          <h1 className="text-3xl font-bold text-center">Let's personalize your journey</h1>
+          <p className="text-foreground-secondary mt-2">Step {currentStep} of 9</p>
         </div>
 
-        {/* Content */}
-        <div className="p-8 min-h-[400px]">
+        {/* Progress Bar */}
+        <div className="w-full bg-surface rounded-full h-2 mb-8 overflow-hidden">
+          <motion.div 
+            className="h-full bg-primary"
+            initial={{ width: 0 }}
+            animate={{ width: `${(currentStep / 9) * 100}%` }}
+            transition={{ duration: 0.3 }}
+          />
+        </div>
+
+        {/* Step Icons */}
+        <div className="flex justify-between mb-8 overflow-x-auto pb-4 hide-scrollbar">
+          {STEPS.map((step) => {
+            const Icon = step.icon
+            const isActive = currentStep === step.id
+            const isPast = currentStep > step.id
+            return (
+              <div 
+                key={step.id} 
+                className={`flex flex-col items-center min-w-[60px] cursor-pointer ${isActive ? 'text-primary' : isPast ? 'text-success' : 'text-foreground-muted'}`}
+                onClick={() => { if(isPast) setCurrentStep(step.id) }}
+              >
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 mb-1 transition-all ${
+                  isActive ? 'border-primary bg-primary/10' : 
+                  isPast ? 'border-success bg-success/10' : 'border-border bg-surface'
+                }`}>
+                  {isPast ? <Check className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
+                </div>
+                <span className="text-xs font-medium hidden sm:block text-center">{step.title}</span>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Form Container */}
+        <div className="card p-6 sm:p-8 relative min-h-[400px]">
           <AnimatePresence mode="wait">
-            <motion.div key={step} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.2 }}>
-              
-              {step === 0 && (
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <h2 className="text-3xl font-bold text-[var(--foreground)]">Basic Information</h2>
-                    <p className="text-white/50">Let&apos;s start with the basics to build your profile.</p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-[var(--foreground)] flex items-center gap-2"><User className="w-4 h-4" /> Full Name</label>
-                      <input className="input-field-onboarding" placeholder="Rahul Sharma" value={form.name}
-                        onChange={e => update('name', e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-[var(--foreground)] flex items-center gap-2"><Mail className="w-4 h-4" /> Email Address</label>
-                      <input className="input-field-onboarding" type="email" placeholder="rahul@example.com" value={form.email}
-                        onChange={e => update('email', e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-[var(--foreground)] flex items-center gap-2"><Calendar className="w-4 h-4" /> Current Year of Study</label>
-                      <select className="input-field-onboarding" value={form.yearOfStudy} onChange={e => update('yearOfStudy', parseInt(e.target.value))}>
-                        <option value={1}>1st Year</option>
-                        <option value={2}>2nd Year</option>
-                        <option value={3}>3rd Year</option>
-                        <option value={4}>4th Year</option>
-                        <option value={5}>Post Graduate / Finished</option>
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-[var(--foreground)] flex items-center gap-2"><GraduationCap className="w-4 h-4" /> Undergraduate Degree</label>
-                      <select className="input-field-onboarding" value={form.currentDegree} onChange={e => update('currentDegree', e.target.value)}>
-                        <option value="">Select Degree</option>
-                        {degrees.map(d => <option key={d} value={d}>{d}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-[var(--foreground)] flex items-center gap-2">Current CGPA (out of 10)</label>
-                    <input type="number" step="0.01" className="input-field-onboarding" placeholder="8.50" value={form.cgpa || ''}
-                      onChange={e => update('cgpa', parseFloat(e.target.value))} />
-                  </div>
-                </div>
-              )}
-
-              {step === 1 && (
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <h2 className="text-3xl font-bold text-[var(--foreground)]">Academics & Scores</h2>
-                    <p className="text-white/50">Your test scores help us evaluate your profile strength.</p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-widest">Entrance Exams</h3>
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-white/50">GRE Score (Optional)</label>
-                        <input type="number" className="input-field-onboarding" placeholder="320" value={form.greScore || ''}
-                          onChange={e => update('greScore', parseInt(e.target.value))} />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-white/50">GMAT Score (Optional)</label>
-                        <input type="number" className="input-field-onboarding" placeholder="700" value={form.gmatScore || ''}
-                          onChange={e => update('gmatScore', parseInt(e.target.value))} />
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-widest">Language Proficiency</h3>
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-white/50">IELTS Band (Optional)</label>
-                        <input type="number" step="0.5" className="input-field-onboarding" placeholder="7.5" value={form.ieltsScore || ''}
-                          onChange={e => update('ieltsScore', parseFloat(e.target.value))} />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-white/50">TOEFL Score (Optional)</label>
-                        <input type="number" className="input-field-onboarding" placeholder="105" value={form.toeflScore || ''}
-                          onChange={e => update('toeflScore', parseInt(e.target.value))} />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="pt-4 border-t border-white/5">
-                    <label className="text-sm font-medium text-white/70 flex items-center gap-2"><AlertCircle className="w-4 h-4" /> Number of Backlogs</label>
-                    <input type="number" className="input-field-onboarding w-32" placeholder="0" value={form.backlogs}
-                      onChange={e => update('backlogs', parseInt(e.target.value))} />
-                  </div>
-                </div>
-              )}
-
-              {step === 2 && (
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <h2 className="text-3xl font-bold text-[var(--foreground)]">Target Details</h2>
-                    <p className="text-white/50">Where and when do you plan to start your journey?</p>
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-sm font-medium text-[var(--foreground)]">Preferred Countries</label>
-                    <div className="flex flex-wrap gap-2">
-                      {countries.map(c => (
-                        <button key={c} onClick={() => toggleCountry(c)}
-                          className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                            form.targetCountry.includes(c) ? 'bg-indigo-600 text-white' : 'bg-[#1f2135] text-white/50 hover:bg-white/5'
-                          }`}>
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium text-white/70">Budget Range (INR)</label>
-                      <div className="space-y-2">
-                        {budgetRanges.map(b => (
-                          <button key={b.label} onClick={() => update('budgetLakhs', b.value)}
-                            className={`w-full px-4 py-3 rounded-xl text-sm text-left transition-all ${
-                              form.budgetLakhs === b.value ? 'bg-indigo-600 text-white' : 'bg-[#1f2135] text-white/50'
-                            }`}>
-                            {b.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium text-white/70">Target Intake</label>
-                      <div className="space-y-2">
-                        {intakes.map(i => (
-                          <button key={i} onClick={() => update('targetIntake', i)}
-                            className={`w-full px-4 py-3 rounded-xl text-sm text-left transition-all ${
-                              form.targetIntake === i ? 'bg-indigo-600 text-white' : 'bg-[#1f2135] text-white/50'
-                            }`}>
-                            {i}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {step === 3 && (
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <h2 className="text-3xl font-bold text-[var(--foreground)]">Financial Profile</h2>
-                    <p className="text-white/50">Essential for education loan assessment.</p>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-[var(--foreground)]">Family Annual Income (INR)</label>
-                      <input type="number" className="input-field-onboarding" placeholder="12,00,000" value={form.familyIncome || ''}
-                        onChange={e => update('familyIncome', parseInt(e.target.value))} />
-                    </div>
-                    <div className="flex items-center justify-between p-4 bg-[#1f2135] rounded-2xl">
-                      <div className="space-y-1">
-                        <div className="text-sm font-medium text-[var(--foreground)]">Co-applicant Available?</div>
-                        <div className="text-xs text-white/40">Father/Mother/Guardian with income proof</div>
-                      </div>
-                      <div className="flex bg-[#0a0b14] p-1 rounded-lg">
-                        <button onClick={() => update('hasCoApplicant', true)} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${form.hasCoApplicant ? 'bg-indigo-600 text-white shadow-lg' : 'text-white/30'}`}>YES</button>
-                        <button onClick={() => update('hasCoApplicant', false)} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${!form.hasCoApplicant ? 'bg-indigo-600 text-white shadow-lg' : 'text-white/30'}`}>NO</button>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-white/70">Collateral Type</label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {['property', 'FD', 'none'].map(t => (
-                          <button key={t} onClick={() => update('collateralType', t)}
-                            className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${
-                              form.collateralType === t ? 'bg-indigo-600 text-white' : 'bg-[#1f2135] text-white/30'
-                            }`}>
-                            {t}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-white/70">Any Existing Loans (INR)</label>
-                      <input type="number" className="input-field-onboarding" placeholder="0" value={form.existingLoans}
-                        onChange={e => update('existingLoans', parseInt(e.target.value))} />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {step === 4 && (
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <h2 className="text-3xl font-bold text-[var(--foreground)]">Your Goals</h2>
-                    <p className="text-white/50">Final step to customize your career navigator.</p>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-[var(--foreground)] flex items-center gap-2"><Briefcase className="w-4 h-4" /> Intended Career Field</label>
-                      <input className="input-field-onboarding" placeholder="AI Research, Fintech, Product Management..." 
-                        value={form.careerInterest} onChange={e => update('careerInterest', e.target.value)} />
-                    </div>
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium text-[var(--foreground)]">What is your top priority?</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        {priorities.map(p => (
-                          <button key={p.id} onClick={() => update('priority', p.id)}
-                            className={`p-4 rounded-2xl border transition-all flex items-center gap-3 ${
-                              form.priority === p.id ? 'bg-indigo-600/20 border-indigo-500 text-white' : 'bg-[#1f2135] border-transparent text-white/50'
-                            }`}>
-                            <p.icon className={`w-5 h-5 ${form.priority === p.id ? 'text-indigo-400' : 'text-white/20'}`} />
-                            <span className="font-semibold">{p.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-8 pt-6 border-t border-white/5 flex flex-col items-center gap-4 text-center">
-                    <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center text-green-500">
-                      <Check className="w-8 h-8" />
-                    </div>
-                    <div className="space-y-1">
-                      <h3 className="text-lg font-bold text-[var(--foreground)]">Everything looks great!</h3>
-                      <p className="text-sm text-white/40">You&apos;re about to unlock your personalized study abroad dashboard.</p>
-                    </div>
-                  </div>
-                </div>
-              )}
+            <motion.div
+              key={currentStep}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2 }}
+            >
+              {renderStep()}
             </motion.div>
           </AnimatePresence>
-        </div>
 
-        {/* Footer */}
-        <div className="p-8 bg-[#1a1b2e] flex items-center justify-between">
-          <button onClick={() => step === 0 ? setCurrentPage('landing') : setStep(s => s - 1)}
-            className="text-white/40 hover:text-white flex items-center gap-2 font-medium transition-all">
-            <ChevronLeft className="w-5 h-5" /> Back
-          </button>
-          
-          <button onClick={() => step === 4 ? finish() : setStep(s => s + 1)}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition-all">
-            {step === 4 ? 'Complete Profile' : 'Continue'} 
-            {step === 4 ? <Sparkles className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-          </button>
+          {/* Navigation Buttons */}
+          <div className="flex justify-between items-center mt-12 pt-6 border-t border-border">
+            {currentStep === 1 ? (
+              <button
+                onClick={handleLogout}
+                disabled={loading}
+                className="btn-secondary flex items-center gap-2"
+              >
+                <LogOut className="w-4 h-4" /> Sign Out
+              </button>
+            ) : (
+              <button
+                onClick={handlePrev}
+                disabled={loading}
+                className="btn-secondary flex items-center gap-2"
+              >
+                <ChevronLeft className="w-4 h-4" /> Back
+              </button>
+            )}
+            
+            <div className="flex items-center gap-3">
+              {currentStep > 1 && (
+                <button
+                  onClick={handleSkip}
+                  disabled={loading}
+                  className="text-foreground-secondary hover:text-foreground transition-colors text-sm px-4"
+                >
+                  Skip for now
+                </button>
+              )}
+              
+              <button
+                onClick={handleNext}
+                disabled={loading || (currentStep === 1 && !localData.name)} // Require Name
+                className="btn-primary flex items-center gap-2"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {currentStep === 9 ? 'Complete Setup' : 'Continue'} 
+                {!loading && <ChevronRight className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
         </div>
-      </motion.div>
-
-      <style jsx>{`
-        .input-field-onboarding {
-          width: 100%;
-          background: #1f2135;
-          border: 1px solid rgba(255,255,255,0.05);
-          border-radius: 1rem;
-          padding: 1rem;
-          color: white;
-          font-size: 0.875rem;
-          transition: all 0.2s;
-        }
-        .input-field-onboarding:focus {
-          outline: none;
-          border-color: #6366f1;
-          background: #252841;
-          box-shadow: 0 0 0 4px rgba(99,102,241,0.1);
-        }
-        .animate-pulse-glow {
-          animation: pulse-glow 2s infinite;
-        }
-        @keyframes pulse-glow {
-          0% { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
-          70% { box-shadow: 0 0 0 20px rgba(99,102,241,0); }
-          100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
-        }
-      `}</style>
+      </div>
     </div>
   )
 }

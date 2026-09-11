@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { StudentProfile } from './types'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -30,46 +31,67 @@ export function calculateEMI(principal: number, rate: number, tenure: number): n
   return Math.round(emi)
 }
 
-export function calculateDreamScore(profile: {
-  cgpa: number
-  greScore: number
-  ieltsScore: number
-  workExpYears: number
-  sopComplete: boolean
-  lorCount: number
-  researchPapers: number
-  extracurriculars: number
-  loanEligible: boolean
-  savingsLakhs: number
-  coBorrowerIncome: number
-  universitiesFinalized: number
-  applicationsSubmitted: number
-  visaDocsReady: boolean
-}): number {
+export function parseBudgetToLakhs(budgetStr?: string): number {
+  if (!budgetStr) return 0
+  if (budgetStr.includes('Below 20L')) return 15
+  if (budgetStr.includes('20L – 40L')) return 30
+  if (budgetStr.includes('40L – 60L')) return 50
+  if (budgetStr.includes('60L – 80L')) return 70
+  if (budgetStr.includes('80L+')) return 90
+  return 0
+}
+
+export function parseNumber(val: string | number | undefined | null, fallback = 0): number {
+  if (typeof val === 'number') return val
+  if (!val) return fallback
+  const parsed = parseFloat(val)
+  return isNaN(parsed) ? fallback : parsed
+}
+
+export function calculateDreamScore(profile: Partial<StudentProfile>): number {
+  // Parse legacy or new schema
+  const cgpa = parseNumber(profile.cgpa) || parseNumber(profile.undergradCgpa)
+  const greScore = parseNumber(profile.greScore) || parseNumber(profile.greScoreStr)
+  const ieltsScore = parseNumber(profile.ieltsScore)
+  const workExpYears = parseNumber(profile.workExpYears) || parseNumber(profile.yearsExperience)
+  
+  const sopComplete = profile.sopComplete || profile.docSop === 'Ready'
+  const lorCount = parseNumber(profile.lorCount) || (profile.docLors === 'Ready' ? 3 : profile.docLors === 'In Progress' ? 1 : 0)
+  const researchPapers = parseNumber(profile.researchPapers) || (profile.hasResearchPapers === 'Yes' ? 1 : 0)
+  const extracurriculars = parseNumber(profile.extracurriculars) || (profile.extracurricularRoles ? 2 : 0)
+  
+  const loanEligible = profile.loanEligible || profile.fundingSource === 'Education Loan' || true // default positive
+  const savingsLakhs = parseNumber(profile.savingsLakhs) || 5 // default buffer
+  const coBorrowerIncome = parseNumber(profile.coBorrowerIncome) || (profile.coApplicantStr === 'Yes' ? 1000000 : 0)
+  
+  const universitiesFinalized = parseNumber(profile.universitiesFinalized) || (profile.targetUniversitiesList?.length || 0)
+  const applicationsSubmitted = parseNumber(profile.applicationsSubmitted) || (profile.applicationStage === 'Applications in Progress' ? 2 : 0)
+  const visaDocsReady = profile.visaDocsReady || profile.docVisa === 'Ready'
+
   // Academic Score (30%)
-  const normalizedCGPA = Math.min(profile.cgpa / 10, 1)
-  const normalizedGRE = Math.min(profile.greScore / 340, 1)
-  const normalizedIELTS = Math.min(profile.ieltsScore / 9, 1)
+  const normalizedCGPA = Math.min(cgpa / 10, 1)
+  const normalizedGRE = Math.min(greScore / 340, 1)
+  const normalizedIELTS = Math.min(ieltsScore / 9, 1)
   const academicScore = normalizedCGPA * 0.4 + normalizedGRE * 0.4 + normalizedIELTS * 0.2
 
   // Financial Score (25%)
-  const loanEligibility = profile.loanEligible ? 1 : 0
-  const savingsBuffer = Math.min(profile.savingsLakhs / 20, 1)
-  const coBorrowerScore = Math.min(profile.coBorrowerIncome / 1500000, 1)
+  const loanEligibility = loanEligible ? 1 : 0
+  const savingsBuffer = Math.min(savingsLakhs / 20, 1)
+  const coBorrowerScore = Math.min(coBorrowerIncome / 1500000, 1)
   const financialScore = loanEligibility * 0.5 + savingsBuffer * 0.3 + coBorrowerScore * 0.2
 
   // Profile Strength (25%)
-  const sopScore = profile.sopComplete ? 1 : 0
-  const lorScore = Math.min(profile.lorCount / 3, 1)
-  const workExpScore = Math.min(profile.workExpYears / 5, 1)
-  const researchScore = Math.min(profile.researchPapers / 3, 1)
-  const extraScore = Math.min(profile.extracurriculars / 5, 1)
+  const sopScore = sopComplete ? 1 : 0
+  const lorScore = Math.min(lorCount / 3, 1)
+  const workExpScore = Math.min(workExpYears / 5, 1)
+  const researchScore = Math.min(researchPapers / 3, 1)
+  const extraScore = Math.min(extracurriculars / 5, 1)
   const profileStrength = sopScore * 0.3 + lorScore * 0.3 + workExpScore * 0.2 + researchScore * 0.1 + extraScore * 0.1
 
   // Application Progress (20%)
-  const uniProgress = Math.min(profile.universitiesFinalized / 5, 1)
-  const appProgress = Math.min(profile.applicationsSubmitted / 5, 1)
-  const visaProgress = profile.visaDocsReady ? 1 : 0
+  const uniProgress = Math.min(universitiesFinalized / 5, 1)
+  const appProgress = Math.min(applicationsSubmitted / 5, 1)
+  const visaProgress = visaDocsReady ? 1 : 0
   const applicationProgress = uniProgress * 0.3 + appProgress * 0.5 + visaProgress * 0.2
 
   const totalScore = (
@@ -83,10 +105,12 @@ export function calculateDreamScore(profile: {
 }
 
 export function getAdmissionProbability(
-  cgpa: number,
-  greScore: number,
+  cgpaInput: number | string | undefined,
+  greScoreInput: number | string | undefined,
   universityRanking: number
 ): { probability: number; category: 'reach' | 'match' | 'safety' } {
+  const cgpa = parseNumber(cgpaInput, 7)
+  const greScore = parseNumber(greScoreInput, 300)
   let score = 0
   
   // CGPA component (max 40)
