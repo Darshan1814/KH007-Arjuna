@@ -25,7 +25,7 @@ spec:
       # Override at deploy time: image is set by Jenkins via `kubectl set image`.
       containers:
         - name: gradpilot
-          image: ghcr.io/darshan1814/gradpilot:latest
+          image: darshan11111/gradpilot:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000

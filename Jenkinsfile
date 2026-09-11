@@ -33,7 +33,7 @@ pipeline {
 
   environment {
     REGISTRY        = 'docker.io'
-    IMAGE_NAMESPACE = 'darshan1814'
+    IMAGE_NAMESPACE = 'darshan11111'
     IMAGE_NAME      = 'gradpilot'
     IMAGE_TAG       = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'dev'}"
     IMAGE_REF       = "${env.REGISTRY}/${env.IMAGE_NAMESPACE}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
