@@ -26,10 +26,11 @@ spec:
       containers:
         - name: gradpilot
           image: darshan11111/gradpilot:latest
-          # IfNotPresent works both for local kind (image is loaded via
-          # `kind load docker-image`) and for production with a registry
-          # (Jenkins always pushes a unique tag, so Kubernetes pulls it).
-          imagePullPolicy: IfNotPresent
+          # Always pull from the registry. Combined with Jenkins pushing a
+          # unique tag per build, this guarantees rollouts pick up the new
+          # build without needing `kind load` (which duplicates the image
+          # on disk and exhausts small EC2 root volumes).
+          imagePullPolicy: Always
           ports:
             - containerPort: 3000
               name: http

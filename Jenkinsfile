@@ -180,6 +180,17 @@ pipeline {
       }
     }
 
+    stage('Load image into kind') {
+      // Disabled — kind load duplicates the image into its own containerd
+      // store, doubling disk usage. Instead we push to Docker Hub and let
+      // kind pull it via imagePullPolicy: Always. Re-enable only if you're
+      // running an offline cluster.
+      when { expression { false } }
+      steps {
+        sh 'echo "kind load skipped — using registry pull instead"'
+      }
+    }
+
     stage('Deploy to Kubernetes') {
       when {
         anyOf {
