@@ -590,20 +590,20 @@ export default function ExpertChat() {
       <AnimatePresence>
         {showCopilot && activeChatId && (
           <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: 320, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
-            className="border-l border-border bg-[#111b21] flex flex-col flex-shrink-0">
-            <div className="p-4 border-b border-border flex items-center justify-between">
+            className="border-l chat-strip flex flex-col flex-shrink-0" style={{ borderColor: 'var(--chat-border)' }}>
+            <div className="p-4 border-b chat-divider flex items-center justify-between">
               <div className="flex items-center gap-2 text-indigo-400 font-bold">
                 {copilotLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />} AI Co-pilot
               </div>
-              <button onClick={() => setShowCopilot(false)} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
+              <button onClick={() => setShowCopilot(false)} className="chat-fg-muted hover:chat-fg"><X className="w-5 h-5" /></button>
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
               
               {/* Suggested Reply */}
               <div>
-                <h4 className="text-xs uppercase tracking-wider text-gray-500 font-bold mb-2">Suggested Reply</h4>
-                <div className="bg-[#202c33] rounded-lg p-3 text-sm text-gray-300 border border-indigo-500/20">
+                <h4 className="text-xs uppercase tracking-wider chat-fg-subtle font-bold mb-2">Suggested Reply</h4>
+                <div className="chat-elevated rounded-lg p-3 text-sm chat-fg border border-indigo-500/20">
                   {copilotData?.suggestedReply || "Hi! I've reviewed your profile and I'm ready to help you with your applications. What's your biggest priority right now?"}
                   {copilotData?.suggestedReply && (
                     <button onClick={() => setInputText(copilotData.suggestedReply!)} className="mt-3 w-full py-1.5 rounded bg-indigo-500/20 text-indigo-400 text-xs font-bold hover:bg-indigo-500/30 transition-colors">
@@ -615,18 +615,18 @@ export default function ExpertChat() {
 
               {/* Student Profile Snapshot */}
               <div>
-                <h4 className="text-xs uppercase tracking-wider text-gray-500 font-bold mb-2 flex items-center gap-2">
+                <h4 className="text-xs uppercase tracking-wider chat-fg-subtle font-bold mb-2 flex items-center gap-2">
                   <UserIcon className="w-4 h-4" /> Live Profile Snapshot
                 </h4>
-                <div className="bg-[#202c33] rounded-lg p-3 space-y-2 text-sm text-gray-300">
-                  <div className="flex justify-between"><span className="text-gray-500">CGPA</span> <span>{copilotData?.profileSnapshot?.cgpa || 'N/A'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">GRE</span> <span>{copilotData?.profileSnapshot?.gre || 'N/A'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">IELTS</span> <span>{copilotData?.profileSnapshot?.ielts || 'N/A'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Work Exp</span> <span>{copilotData?.profileSnapshot?.workExp || 'N/A'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Budget</span> <span>{copilotData?.profileSnapshot?.budget || 'N/A'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Stage</span> <span>{copilotData?.profileSnapshot?.stage || 'N/A'}</span></div>
+                <div className="chat-elevated rounded-lg p-3 space-y-2 text-sm chat-fg">
+                  <div className="flex justify-between"><span className="chat-fg-subtle">CGPA</span> <span>{copilotData?.profileSnapshot?.cgpa || 'N/A'}</span></div>
+                  <div className="flex justify-between"><span className="chat-fg-subtle">GRE</span> <span>{copilotData?.profileSnapshot?.gre || 'N/A'}</span></div>
+                  <div className="flex justify-between"><span className="chat-fg-subtle">IELTS</span> <span>{copilotData?.profileSnapshot?.ielts || 'N/A'}</span></div>
+                  <div className="flex justify-between"><span className="chat-fg-subtle">Work Exp</span> <span>{copilotData?.profileSnapshot?.workExp || 'N/A'}</span></div>
+                  <div className="flex justify-between"><span className="chat-fg-subtle">Budget</span> <span>{copilotData?.profileSnapshot?.budget || 'N/A'}</span></div>
+                  <div className="flex justify-between"><span className="chat-fg-subtle">Stage</span> <span>{copilotData?.profileSnapshot?.stage || 'N/A'}</span></div>
                 </div>
-                <p className="text-[10px] text-gray-500 mt-2 text-center">Extracted from chat context</p>
+                <p className="text-[10px] chat-fg-subtle mt-2 text-center">Extracted from chat context</p>
               </div>
             </div>
           </motion.div>
