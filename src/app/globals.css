@@ -357,3 +357,36 @@ img, svg {
 .chat-bubble-incoming { background: var(--chat-bubble-incoming); color: var(--chat-bubble-incoming-fg); }
 .chat-bubble-outgoing { background: var(--chat-bubble-outgoing); color: var(--chat-bubble-outgoing-fg); }
 .chat-divider { border-color: var(--chat-border); }
+
+
+/* =====================================================================
+   Chat invert: force common Tailwind text-color utilities to follow the
+   chat foreground when chat is in its inverted (light) mode. Without this
+   `text-white` / `text-gray-100` etc. inside the chat would render white
+   on white in dark global theme (chat appears light).
+===================================================================== */
+
+/* Global theme = dark  ->  chat = LIGHT  */
+[data-chat-theme="invert"] .text-white,
+[data-chat-theme="invert"] .text-gray-100,
+[data-chat-theme="invert"] .text-gray-200 {
+  color: var(--chat-fg) !important;
+}
+[data-chat-theme="invert"] .text-gray-300,
+[data-chat-theme="invert"] .text-gray-400 {
+  color: var(--chat-fg-muted) !important;
+}
+[data-chat-theme="invert"] .text-gray-500 {
+  color: var(--chat-fg-subtle) !important;
+}
+
+/* Global theme = light  ->  chat = DARK
+   Restore light-on-dark inside the chat shell (and override the global
+   `[data-theme="light"] .text-white` rule that would otherwise paint
+   text-white as foreground/dark and make it invisible). */
+[data-theme="light"] [data-chat-theme="invert"] .text-white { color: #ffffff !important; }
+[data-theme="light"] [data-chat-theme="invert"] .text-gray-100,
+[data-theme="light"] [data-chat-theme="invert"] .text-gray-200 { color: #e9edef !important; }
+[data-theme="light"] [data-chat-theme="invert"] .text-gray-300,
+[data-theme="light"] [data-chat-theme="invert"] .text-gray-400 { color: #aebac1 !important; }
+[data-theme="light"] [data-chat-theme="invert"] .text-gray-500 { color: #8696a0 !important; }

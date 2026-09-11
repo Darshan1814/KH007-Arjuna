@@ -387,7 +387,7 @@ export default function ExpertChat() {
   const formatTime = (isoString: string) => new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
   if (loading) {
-    return <div className="flex-1 flex items-center justify-center bg-[#0b141a]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+    return <div className="flex-1 flex items-center justify-center chat-shell"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
   }
 
   const getPresenceText = (lastSeen: string | undefined, status?: string) => {
@@ -406,11 +406,11 @@ export default function ExpertChat() {
   const student = activeSession?.student || { name: 'Student' }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] rounded-2xl overflow-hidden shadow-2xl border border-border bg-background">
+    <div data-chat-theme="invert" className="flex h-[calc(100vh-8rem)] rounded-2xl overflow-hidden shadow-2xl border chat-shell" style={{ borderColor: 'var(--chat-border)' }}>
       
       {/* Sidebar - Chat List */}
-      <div className="w-80 border-r border-border bg-[#111b21] flex flex-col hidden md:flex">
-        <div className="p-4 bg-[#202c33] text-gray-200 font-bold text-lg flex items-center justify-between border-b border-white/5">
+      <div className="w-80 border-r flex flex-col hidden md:flex chat-strip" style={{ borderColor: 'var(--chat-border)' }}>
+        <div className="p-4 chat-elevated font-bold text-lg flex items-center justify-between border-b" style={{ borderColor: 'var(--chat-border)' }}>
           Active Chats
         </div>
         <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -465,10 +465,10 @@ export default function ExpertChat() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => handleStartCall(false)} className="p-2 hover:bg-white/10 rounded-full text-gray-300 transition-colors">
+              <button onClick={() => handleStartCall(false)} className="p-2 hover:bg-black/10 rounded-full chat-fg-muted transition-colors">
                 <Video className="w-5 h-5" />
               </button>
-              <button onClick={() => handleStartCall(true)} className="p-2 hover:bg-white/10 rounded-full text-gray-300 transition-colors">
+              <button onClick={() => handleStartCall(true)} className="p-2 hover:bg-black/10 rounded-full chat-fg-muted transition-colors">
                 <Phone className="w-4 h-4" />
               </button>
               <button onClick={() => setShowCopilot(!showCopilot)} className="p-2 ml-2 bg-indigo-500/20 text-indigo-400 rounded-lg hover:bg-indigo-500/30 transition-colors flex items-center gap-2">
@@ -491,7 +491,7 @@ export default function ExpertChat() {
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
             {messages.length === 0 && (
-              <div className="text-center p-4 bg-white/5 rounded-lg text-sm text-gray-300 max-w-xs mx-auto border border-white/10">
+              <div className="text-center p-4 rounded-lg text-sm max-w-xs mx-auto chat-elevated">
                 You are now connected! Messages and documents are end-to-end encrypted.
               </div>
             )}
@@ -501,7 +501,7 @@ export default function ExpertChat() {
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[85%] sm:max-w-[70%] rounded-lg p-2 px-3 shadow-sm relative group ${
-                    isMine ? 'bg-[#005c4b] text-[#e9edef]' : 'bg-[#202c33] text-[#e9edef]'
+                    isMine ? 'chat-bubble-outgoing' : 'chat-bubble-incoming'
                   }`} style={{ borderTopRightRadius: isMine ? '0' : '0.5rem', borderTopLeftRadius: !isMine ? '0' : '0.5rem' }}>
                     
                     {msg.document_url && msg.document_name === 'audio' ? (
@@ -512,7 +512,7 @@ export default function ExpertChat() {
                       </div>
                     ) : msg.document_url ? (
                       <a href={msg.document_url} target="_blank" rel="noopener noreferrer" 
-                         className="flex items-center gap-3 bg-black/20 p-2 rounded-md mb-2 hover:bg-black/40 transition-colors border border-white/5">
+                         className="flex items-center gap-3 bg-black/10 p-2 rounded-md mb-2 hover:bg-black/20 transition-colors">
                         <div className="p-2 bg-red-500/20 rounded text-red-400"><FileText className="w-5 h-5" /></div>
                         <div className="text-sm truncate pr-4">{msg.document_name}</div>
                       </a>
@@ -521,8 +521,8 @@ export default function ExpertChat() {
                     <div className="text-[14.5px] leading-relaxed whitespace-pre-wrap font-sans">{msg.content}</div>
                     
                     <div className="flex items-center justify-end gap-1 mt-1 -mr-1">
-                      <span className="text-[10px] text-white/50">{formatTime(msg.created_at)}</span>
-                      {isMine && (msg.is_read ? <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" /> : <Check className="w-3.5 h-3.5 text-white/50" />)}
+                      <span className="text-[10px] opacity-60">{formatTime(msg.created_at)}</span>
+                      {isMine && (msg.is_read ? <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" /> : <Check className="w-3.5 h-3.5 opacity-60" />)}
                     </div>
                   </div>
                 </div>
@@ -531,7 +531,7 @@ export default function ExpertChat() {
             <div ref={messagesEndRef} />
           </div>
 
-          <form onSubmit={handleSend} className="p-3 flex items-center gap-2 bg-[#202c33]">
+          <form onSubmit={handleSend} className="p-3 flex items-center gap-2 chat-elevated">
             <input 
               type="file" 
               ref={fileInputRef} 
@@ -543,12 +543,12 @@ export default function ExpertChat() {
               type="button" 
               disabled={uploading || isRecording}
               onClick={() => fileInputRef.current?.click()} 
-              className="p-3 text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-full transition-colors disabled:opacity-50"
+              className="p-3 chat-fg-muted hover:bg-black/5 rounded-full transition-colors disabled:opacity-50"
             >
               {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
             </button>
             
-            <div className="flex-1 bg-[#2a3942] rounded-xl flex items-center px-4 py-2 border border-white/5 overflow-hidden">
+            <div className="flex-1 chat-input rounded-xl flex items-center px-4 py-2 overflow-hidden">
               {isRecording ? (
                 <div className="flex-1 flex items-center gap-3 text-red-400 animate-pulse font-medium">
                   <Mic className="w-5 h-5" /> Recording... {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
@@ -559,7 +559,7 @@ export default function ExpertChat() {
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder="Type a message..."
-                  className="w-full bg-transparent outline-none text-gray-100 placeholder-gray-400 text-[15px]"
+                  className="w-full bg-transparent outline-none chat-fg text-[15px]"
                 />
               )}
             </div>
@@ -573,14 +573,14 @@ export default function ExpertChat() {
                 <StopCircle className="w-5 h-5" />
               </button>
             ) : (
-              <button type="button" onClick={startRecording} className="p-3 text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-full transition-colors">
+              <button type="button" onClick={startRecording} className="p-3 chat-fg-muted hover:bg-black/5 rounded-full transition-colors">
                 <Mic className="w-5 h-5" />
               </button>
             )}
           </form>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center bg-[#0b141a] text-gray-400">
+        <div className="flex-1 flex flex-col items-center justify-center chat-shell chat-fg-muted">
           <Bot className="w-12 h-12 mb-4 opacity-20" />
           <p>Select a chat from the sidebar to start messaging.</p>
         </div>
