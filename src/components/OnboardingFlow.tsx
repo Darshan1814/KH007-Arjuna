@@ -343,7 +343,7 @@ const MultiAutocomplete = ({ label, field, placeholder, localData, updateLocal }
 }
 
 export default function OnboardingFlow() {
-  const { profile, updateProfile, setOnboarded, setCurrentPage, user, setUser, targetOnboardingStep, setTargetOnboardingStep } = useAppStore()
+  const { profile, updateProfile, setOnboarded, setCurrentPage, user, setUser, targetOnboardingStep, setTargetOnboardingStep, isOnboarded } = useAppStore()
   const track = useTrack()
   const [currentStep, setCurrentStep] = useState(targetOnboardingStep || 1)
   const [loading, setLoading] = useState(false)
@@ -817,11 +817,24 @@ export default function OnboardingFlow() {
       <div className="glow-orb bg-secondary" style={{ bottom: '-10%', right: '-10%', width: '30vw', height: '30vw' }} />
 
       <div className="w-full max-w-3xl z-10">
+        {isOnboarded && (
+          <div className="flex justify-between items-center mb-4">
+            <button
+              onClick={() => setCurrentPage('dashboard')}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-border bg-surface text-foreground hover:bg-surface-glass transition-all flex items-center gap-1.5"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" /> Back to Dashboard
+            </button>
+            <span className="text-xs text-foreground-secondary font-medium">Updating Profile Info</span>
+          </div>
+        )}
         <div className="mb-8 flex flex-col items-center">
           <div className="text-primary mb-2">
             <Sparkles className="w-10 h-10 animate-pulse-glow" />
           </div>
-          <h1 className="text-3xl font-bold text-center">Let's personalize your journey</h1>
+          <h1 className="text-3xl font-bold text-center">
+            {isOnboarded ? 'Update Your Profile Info' : "Let's personalize your journey"}
+          </h1>
           <p className="text-foreground-secondary mt-2">Step {currentStep} of 9</p>
         </div>
 
@@ -876,13 +889,23 @@ export default function OnboardingFlow() {
           {/* Navigation Buttons */}
           <div className="flex justify-between items-center mt-12 pt-6 border-t border-border">
             {currentStep === 1 ? (
-              <button
-                onClick={handleLogout}
-                disabled={loading}
-                className="btn-secondary flex items-center gap-2"
-              >
-                <LogOut className="w-4 h-4" /> Sign Out
-              </button>
+              isOnboarded ? (
+                <button
+                  onClick={() => setCurrentPage('dashboard')}
+                  disabled={loading}
+                  className="btn-secondary flex items-center gap-2"
+                >
+                  <ChevronLeft className="w-4 h-4" /> Back to Dashboard
+                </button>
+              ) : (
+                <button
+                  onClick={handleLogout}
+                  disabled={loading}
+                  className="btn-secondary flex items-center gap-2"
+                >
+                  <LogOut className="w-4 h-4" /> Sign Out
+                </button>
+              )
             ) : (
               <button
                 onClick={handlePrev}

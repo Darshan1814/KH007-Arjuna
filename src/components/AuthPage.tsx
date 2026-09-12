@@ -22,7 +22,7 @@ function resolvePortal(): Role {
 }
 
 export default function AuthPage() {
-  const { setUser, updateProfile, setOnboarded } = useAppStore()
+  const { setUser, updateProfile, setOnboarded, setCurrentPage } = useAppStore()
   // Role is fixed by the portal (URL), not user-selectable.
   const [role] = useState<Role>(() => resolvePortal())
   // Pre-fill demo credentials on the student portal so judges / reviewers
@@ -99,11 +99,18 @@ export default function AuthPage() {
           }
 
           const realRole = (prof?.role || 'student') as Role
+          const isUserOnboarded = realRole === 'expert' || realRole === 'admin' ? true : !!prof?.is_onboarded
           updateProfile({
             id: data.user.id,
             role: realRole,
-            isOnboarded: realRole === 'expert' ? true : !!prof?.is_onboarded,
+            isOnboarded: isUserOnboarded,
           })
+          setOnboarded(isUserOnboarded)
+          if (isUserOnboarded) {
+            setCurrentPage('dashboard')
+          } else {
+            setCurrentPage('onboarding')
+          }
         }
 
         toast.success('Welcome back to EduFinAI!')
@@ -160,7 +167,14 @@ export default function AuthPage() {
             toast.error('Failed to fully initialize profile. Please sign in again.')
           }
 
-          updateProfile({ id: data.user.id, role: signupRole, isOnboarded: signupRole === 'expert' })
+          const isUserOnboarded = signupRole === 'expert'
+          updateProfile({ id: data.user.id, role: signupRole, isOnboarded: isUserOnboarded })
+          setOnboarded(isUserOnboarded)
+          if (isUserOnboarded) {
+            setCurrentPage('dashboard')
+          } else {
+            setCurrentPage('onboarding')
+          }
         }
 
         toast.success('Account created successfully! Check your email to confirm.')

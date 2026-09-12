@@ -125,7 +125,19 @@ export default function Home() {
             // domesticMeta keys are already camelCase and align 1:1 with StudentProfile.
             ...domesticMeta,
           })
-          setOnboarded(data.is_onboarded || false)
+          const isAlreadyOnboarded = !!data.is_onboarded
+          setOnboarded(isAlreadyOnboarded)
+
+          const currentState = useAppStore.getState()
+          if (currentState.currentPage === 'landing') {
+            if (isAlreadyOnboarded) {
+              setCurrentPage('dashboard')
+            } else if (data.role !== 'admin' && data.role !== 'expert') {
+              setCurrentPage('onboarding')
+            } else {
+              setCurrentPage('dashboard')
+            }
+          }
         }
       } catch (err) {
         console.error("Failed to fetch profile", err)
@@ -163,9 +175,6 @@ export default function Home() {
 
       setUser(session?.user ?? null)
       if (session?.user) {
-        if (currentPage === 'landing') {
-          setCurrentPage('onboarding')
-        }
         updateProfile({ id: session.user.id })
         fetchProfile(session.user.id)
       } else {
@@ -174,7 +183,7 @@ export default function Home() {
     })
 
     return () => subscription.unsubscribe()
-  }, [setUser, currentPage, setCurrentPage, updateProfile, setOnboarded])
+  }, [setUser, updateProfile, setOnboarded, setCurrentPage])
 
   if (isInitializing) {
     return (
