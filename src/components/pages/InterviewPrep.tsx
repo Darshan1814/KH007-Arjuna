@@ -134,6 +134,16 @@ export default function InterviewPrep() {
       return
     }
 
+    // Pre-check microphone access before starting the call
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach((t) => t.stop()) // release immediately
+    } catch (micErr: any) {
+      console.error('[vapi] mic permission denied', micErr)
+      toast.error('Microphone access denied — please allow mic permissions and try again')
+      return
+    }
+
     setCallStatus('connecting')
     setReport(null)
     setTranscript([])
@@ -155,7 +165,16 @@ export default function InterviewPrep() {
       })
       vapi.on('error', (e: any) => {
         console.error('[vapi] error', e)
-        toast.error(e?.errorMsg || e?.message || 'Voice call failed')
+        console.error('[vapi] error details:', JSON.stringify(e, Object.getOwnPropertyNames(e || {})))
+        const msg =
+          e?.errorMsg || e?.message || e?.error?.message || (typeof e === 'string' ? e : 'Voice call failed')
+        toast.error(msg)
+        setCallStatus('idle')
+      })
+      // SDK v2.5+ emits this when the call fails to start
+      vapi.on('call-start-failed' as any, (event: any) => {
+        console.error('[vapi] call-start-failed', JSON.stringify(event))
+        toast.error(event?.reason || event?.message || 'Call failed to start')
         setCallStatus('idle')
       })
       vapi.on('message', (msg: any) => {
@@ -174,7 +193,7 @@ export default function InterviewPrep() {
       // Start the call against the prebuilt assistant. We pass profile
       // values via Vapi's `assistantOverrides.variableValues` so the
       // system prompt's {{studentName}}, {{program}}, etc. are filled in.
-      await vapi.start(assistantId, {
+      const call = await vapi.start(assistantId, {
         variableValues: {
           studentName: profile.name || 'the candidate',
           university: profileForApi.target_university || `a ${country} university`,
@@ -184,8 +203,10 @@ export default function InterviewPrep() {
           country,
         },
       })
+      console.log('[vapi] call started', call)
     } catch (e: any) {
       console.error('[vapi] start failed', e)
+      console.error('[vapi] start failed details:', JSON.stringify(e, Object.getOwnPropertyNames(e || {})))
       toast.error(e?.message || 'Could not start the voice interview')
       setCallStatus('idle')
     }
