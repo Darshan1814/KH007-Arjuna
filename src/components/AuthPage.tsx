@@ -25,8 +25,10 @@ export default function AuthPage() {
   const { setUser, updateProfile, setOnboarded } = useAppStore()
   // Role is fixed by the portal (URL), not user-selectable.
   const [role] = useState<Role>(() => resolvePortal())
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  // Pre-fill demo credentials on the student portal so judges / reviewers
+  // can sign in with one click. Other portals start empty.
+  const [email, setEmail] = useState(() => (resolvePortal() === 'student' ? 'rohit@gmail.com' : ''))
+  const [password, setPassword] = useState(() => (resolvePortal() === 'student' ? 'Wtmg2135' : ''))
   const [isLogin, setIsLogin] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
