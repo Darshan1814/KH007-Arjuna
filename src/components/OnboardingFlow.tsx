@@ -33,7 +33,7 @@ const STEPS = [
   { id: 9, title: 'Preferences', icon: Settings },
 ]
 
-const allCountries = Object.values(countries).map(c => c.name).sort()
+const allCountries = Object.values(countries).map(c => c.name).sort((a, b) => a.localeCompare(b))
 
 // Define Input outside the main component so React doesn't unmount it on every keystroke
 const Input = ({ label, field, type = "text", placeholder = "", options = [] as string[], allowCustom = false, localData, updateLocal }: any) => {
@@ -857,8 +857,11 @@ export default function OnboardingFlow() {
             return (
               <div 
                 key={step.id} 
+                role="button"
+                tabIndex={0}
                 className={`flex flex-col items-center min-w-[60px] cursor-pointer ${isActive ? 'text-primary' : isPast ? 'text-success' : 'text-foreground-muted'}`}
                 onClick={() => { if(isPast) setCurrentStep(step.id) }}
+                onKeyDown={(e) => { if((e.key === 'Enter' || e.key === ' ') && isPast) setCurrentStep(step.id) }}
               >
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 mb-1 transition-all ${
                   isActive ? 'border-primary bg-primary/10' : 

@@ -34,7 +34,7 @@ export default function UserExpertChat() {
   // append-only queue. The modal dedupes/processes unseen entries.
   const [webRTCSignals, setWebRTCSignals] = useState<any[]>([])
   const pushSignal = (sig: any) =>
-    setWebRTCSignals((prev) => [...prev, { ...sig, _id: `${Date.now()}-${Math.random()}` }])
+    setWebRTCSignals((prev) => [...prev, { ...sig, _id: `${Date.now()}-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'sig'}` }])
   // Stable "am I the caller?" flag. Must persist across the
   // calling/incoming → connected transition (both peers are 'connected' once
   // the call starts, so it can't be derived from callState).
@@ -342,7 +342,8 @@ export default function UserExpertChat() {
 
     setUploading(true)
     const fileExt = file.name.split('.').pop()
-    const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`
+    const rand = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)
+    const fileName = `${rand}_${Date.now()}.${fileExt}`
     const filePath = `${activeSession.id}/${fileName}`
 
     try {

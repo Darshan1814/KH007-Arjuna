@@ -94,7 +94,7 @@ export const useNetworkStore = create<NetworkState>()(
         if (existing) return existing.id
         
         const newChat: ExpertChatSession = {
-          id: `chat-${Math.random().toString(36).substring(7)}`,
+          id: `chat-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)}`,
           studentId,
           expertId,
           lastMessageAt: new Date().toISOString(),
@@ -108,7 +108,7 @@ export const useNetworkStore = create<NetworkState>()(
       sendMessage: (msg) => {
         const newMessage: ExpertMessage = {
           ...msg,
-          id: `msg-${Math.random().toString(36).substring(7)}`,
+          id: `msg-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)}`,
           timestamp: new Date().toISOString(),
           isRead: false
         }

@@ -96,7 +96,7 @@ const currencyData: Record<string, { code: string; symbol: string; rate: number;
   'Fiji': { code: 'FJD', symbol: 'FJ$', rate: 36.8, flag: '🇫🇯' },
 }
 
-const countryList = Object.keys(currencyData).sort()
+const countryList = Object.keys(currencyData).sort((a, b) => a.localeCompare(b))
 
 export default function CurrencyRisk() {
   const [selectedCountry, setSelectedCountry] = useState('United States')

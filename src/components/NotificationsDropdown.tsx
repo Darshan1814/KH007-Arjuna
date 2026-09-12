@@ -28,7 +28,14 @@ export default function NotificationsDropdown() {
       <AnimatePresence>
         {isOpen && (
           <>
-            <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label="Close notifications"
+              className="fixed inset-0 z-30"
+              onClick={() => setIsOpen(false)}
+              onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setIsOpen(false) }}
+            />
             <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
               className="absolute right-0 mt-2 w-[320px] sm:w-[380px] rounded-2xl z-40 overflow-hidden shadow-2xl"
@@ -54,11 +61,22 @@ export default function NotificationsDropdown() {
                   </div>
                 ) : (
                   notifications.map(n => (
-                    <div key={n.id} onClick={() => {
-                      markAsRead(n.id)
-                      if (n.actionPage) setCurrentPage(n.actionPage)
-                      setIsOpen(false)
-                    }}
+                    <div
+                      key={n.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        markAsRead(n.id)
+                        if (n.actionPage) setCurrentPage(n.actionPage)
+                        setIsOpen(false)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          markAsRead(n.id)
+                          if (n.actionPage) setCurrentPage(n.actionPage)
+                          setIsOpen(false)
+                        }
+                      }}
                       className={`p-4 border-b transition-all cursor-pointer relative group ${n.read ? 'opacity-60' : 'bg-white/[0.02]'}`}
                       style={{ borderColor: 'var(--border)' }}>
                       {!n.read && <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500" />}

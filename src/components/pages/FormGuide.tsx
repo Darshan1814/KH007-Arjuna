@@ -84,7 +84,7 @@ const countries = [
   'Georgia', 'Armenia', 'Azerbaijan', 'Serbia', 'Bosnia',
   'Montenegro', 'North Macedonia', 'Albania', 'Moldova', 'Ukraine',
   'Belarus', 'Fiji', 'Papua New Guinea', 'Samoa', 'Tonga',
-].sort()
+].sort((a, b) => a.localeCompare(b))
 
 const degrees = [
   'MS Computer Science', 'MS Data Science', 'MS AI/ML', 'MS Electrical Engineering',

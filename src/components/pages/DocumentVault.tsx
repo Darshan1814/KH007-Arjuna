@@ -209,8 +209,9 @@ export default function DocumentVault() {
           continue
         }
         const data = await fileToDataUrl(file)
+        const rand = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)
         additions.push({
-          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          id: `${Date.now()}-${rand}`,
           name: file.name,
           mime: file.type || 'application/octet-stream',
           size: file.size,

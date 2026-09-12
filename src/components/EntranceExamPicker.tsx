@@ -31,7 +31,8 @@ interface EntranceExamPickerProps {
 
 function makeId(): string {
   // Local, non-cryptographic id for React keys / removal.
-  return `exam-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+  const rand = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())
+  return `exam-${rand}`
 }
 
 export default function EntranceExamPicker({

@@ -1266,8 +1266,17 @@ let lastSuggestedPassword: string | null = null
 // Avoid TS unused-var when no other code reads the cached value.
 void lastSuggestedPassword
 
+function getCryptoRandom(): number {
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const arr = new Uint32Array(1)
+    crypto.getRandomValues(arr)
+    return arr[0] / (0xffffffff + 1)
+  }
+  return 0.5
+}
+
 function pickRandomChar(pool: string): string {
-  return pool.charAt(Math.floor(Math.random() * pool.length))
+  return pool.charAt(Math.floor(getCryptoRandom() * pool.length))
 }
 
 function passwordStrength(pw: string): { level: 0 | 1 | 2 | 3; reasons: string[] } {
@@ -1301,7 +1310,7 @@ function generateStrongPassword(seedName: string): string {
   for (let attempt = 0; attempt < 8; attempt++) {
     const sym1 = pickRandomChar(SYMBOLS)
     const sym2 = pickRandomChar(SYMBOLS)
-    const digits = String(Math.floor(10 + Math.random() * 90)) // 2 digits
+    const digits = String(Math.floor(10 + getCryptoRandom() * 90)) // 2 digits
     const tail = pickRandomChar('abcdefghjkmnpqrstuvwxyz') + pickRandomChar('ABCDEFGHJKLMNPQRSTUVWXYZ')
     const candidate = `${base}${sym1}${tail}${digits}${sym2}`
     const { level } = passwordStrength(candidate)

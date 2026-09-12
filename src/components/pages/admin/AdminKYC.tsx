@@ -268,7 +268,10 @@ export default function AdminKYC() {
                     {selectedExpert.kyc_documents?.map((doc: any, i: number) => (
                       <div 
                         key={i} 
+                        role="button"
+                        tabIndex={0}
                         onClick={() => handleOpenDoc(doc)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleOpenDoc(doc) }}
                         className="p-3 rounded-lg border border-white/10 bg-black/20 flex items-center justify-between hover:border-red-500/30 transition-colors cursor-pointer group"
                       >
                         <div className="flex items-center gap-3">

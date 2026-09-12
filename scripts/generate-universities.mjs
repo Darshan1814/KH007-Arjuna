@@ -372,7 +372,7 @@ function buildRow(country, tier, uni, course, idx) {
       scholarship_criteria: choose(['Merit', 'Need', 'Both', 'Specific']),
       assistantship_available: course.category === 'Science' || course.category === 'Technology' || course.degree === 'PhD',
       on_campus_job_allowed: country !== 'India',
-      part_time_hours_allowed: country === 'USA' ? 20 : country === 'UK' ? 20 : country === 'Canada' ? 24 : country === 'Germany' ? 20 : 20,
+      part_time_hours_allowed: country === 'Canada' ? 24 : 20,
     },
     outcomes: {
       placement_rate_percent: Math.round(75 + mult * 22),
@@ -389,7 +389,7 @@ function buildRow(country, tier, uni, course, idx) {
       post_study_work_years: country === 'USA' ? 3 : country === 'UK' ? 2 : country === 'Canada' ? 3 : country === 'Australia' ? 4 : country === 'Germany' ? 1.5 : country === 'Ireland' ? 2 : country === 'Netherlands' ? 1 : country === 'France' ? 1 : country === 'Singapore' ? 1 : country === 'New Zealand' ? 3 : 0,
       work_during_study_hours_per_week: country === 'India' ? 0 : 20,
       pr_pathway: ['Canada', 'Australia', 'New Zealand', 'Germany'].includes(country),
-      pr_pathway_difficulty: ['Canada', 'Australia'].includes(country) ? 'Moderate' : ['Germany', 'New Zealand'].includes(country) ? 'Hard' : 'Hard',
+      pr_pathway_difficulty: ['Canada', 'Australia'].includes(country) ? 'Moderate' : 'Hard',
       h1b_or_equivalent: country === 'USA',
       visa_name: country === 'USA' ? 'F-1 / OPT / H-1B' : country === 'UK' ? 'Graduate Route' : country === 'Canada' ? 'PGWP' : country === 'Australia' ? 'Subclass 485' : country === 'Germany' ? 'Job Seeker Visa' : country === 'Ireland' ? '2-Year Stay-Back' : 'Work Visa',
     },
@@ -501,4 +501,4 @@ console.log(`Wrote ${csvPath}`)
 const byCountry = {}
 for (const r of rows) byCountry[r.country] = (byCountry[r.country] || 0) + 1
 console.log('\nRows per country:')
-for (const c of Object.keys(byCountry).sort()) console.log(`  ${c.padEnd(15)} ${byCountry[c]}`)
+for (const c of Object.keys(byCountry).sort((a, b) => a.localeCompare(b))) console.log(`  ${c.padEnd(15)} ${byCountry[c]}`)

@@ -180,7 +180,7 @@ export const useAppStore = create<AppState>()(
         notifications: [
           {
             ...n,
-            id: Math.random().toString(36).substring(7),
+            id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `notif-${Date.now()}`,
             timestamp: new Date().toISOString(),
             read: false
           },

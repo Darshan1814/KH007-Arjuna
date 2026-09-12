@@ -150,7 +150,7 @@ export default function DomesticAdmissionPredictor({
         // list of cities doesn't collapse when a single city is selected.
         if (cityFilter === ALL_CITIES) {
           setCityOptions(
-            Array.from(new Set(list.map((c) => c.city).filter(Boolean))).sort(),
+            Array.from(new Set(list.map((c) => c.city).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
           )
         }
         if (list.length === 0)

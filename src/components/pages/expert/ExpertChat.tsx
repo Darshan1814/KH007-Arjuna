@@ -33,7 +33,7 @@ export default function ExpertChat() {
   // A single state slot would drop intermediate signals.
   const [webRTCSignals, setWebRTCSignals] = useState<any[]>([])
   const pushSignal = (sig: any) =>
-    setWebRTCSignals((prev) => [...prev, { ...sig, _id: `${Date.now()}-${Math.random()}` }])
+    setWebRTCSignals((prev) => [...prev, { ...sig, _id: `${Date.now()}-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'sig'}` }])
   // Stable "am I the caller?" flag (persists across calling/incoming →
   // connected; both peers are 'connected' once the call starts).
   const [isCaller, setIsCaller] = useState(false)
@@ -375,7 +375,8 @@ export default function ExpertChat() {
 
     setUploading(true)
     const fileExt = file.name.split('.').pop()
-    const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`
+    const rand = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)
+    const fileName = `${rand}_${Date.now()}.${fileExt}`
     const filePath = `${activeChatId}/${fileName}`
 
     try {

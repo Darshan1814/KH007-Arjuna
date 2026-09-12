@@ -260,7 +260,14 @@ export default function DashboardLayout() {
     <div className="flex min-h-screen" style={{ background: 'var(--background)' }}>
       {/* Overlay for mobile */}
       {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/60 z-[90] md:hidden" onClick={toggleSidebar} />
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Close sidebar overlay"
+          className="fixed inset-0 bg-black/60 z-[90] md:hidden"
+          onClick={toggleSidebar}
+          onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') toggleSidebar() }}
+        />
       )}
 
       {/* Sidebar */}

@@ -12,7 +12,10 @@ interface ReferralState {
   referrals: { name: string; date: string; onboarded: boolean }[]
 }
 
-function genCode() { return 'REF-' + Math.random().toString(36).substring(2, 7).toUpperCase() }
+function genCode() { 
+  const rand = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').substring(0, 5) : Date.now().toString(36).substring(0, 5)
+  return 'REF-' + rand.toUpperCase() 
+}
 
 function loadReferral(): ReferralState {
   if (typeof window === 'undefined') return { code: genCode(), coins: 0, tier: 'Bronze', referrals: [] }

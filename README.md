@@ -1,6 +1,6 @@
-# Kurukshetra — EduFin Platform
+# GradPilot
 
-Kurukshetra (EduFin) is a comprehensive Next.js platform designed to guide students and professionals through their educational, career, and financial journey. The application provides a robust suite of tools for admission prediction, career navigation, financial planning, and expert mentorship.
+GradPilot is a comprehensive Next.js platform designed to guide students through their educational and professional journey. The application provides a robust suite of tools for admission prediction, career navigation, financial planning, and expert mentorship.
 
 ## Tech Stack
 - **Framework**: [Next.js](https://nextjs.org) (v16.2.4)

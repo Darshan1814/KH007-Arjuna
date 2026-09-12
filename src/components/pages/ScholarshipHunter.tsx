@@ -490,7 +490,11 @@ function PillSelect({
       {open && (
         <>
           <div
+            role="button"
+            tabIndex={0}
+            aria-label="Close degree dropdown"
             onClick={() => setOpen(false)}
+            onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setOpen(false) }}
             style={{ position: 'fixed', inset: 0, zIndex: 200 }}
           />
           <div
@@ -564,7 +568,11 @@ function CountryPicker({
       {open && (
         <>
           <div
+            role="button"
+            tabIndex={0}
+            aria-label="Close country dropdown"
             onClick={() => setOpen(false)}
+            onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setOpen(false) }}
             style={{ position: 'fixed', inset: 0, zIndex: 200 }}
           />
           <div

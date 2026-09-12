@@ -22,6 +22,7 @@ spec:
       labels:
         app: gradpilot
     spec:
+      automountServiceAccountToken: false
       # Override at deploy time: image is set by Jenkins via `kubectl set image`.
       containers:
         - name: gradpilot
