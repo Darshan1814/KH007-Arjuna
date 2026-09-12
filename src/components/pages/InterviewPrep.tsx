@@ -154,6 +154,32 @@ export default function InterviewPrep() {
       const vapi = new Vapi(publicKey)
       vapiRef.current = vapi
 
+      // Patch the SDK's internal fetch so the POST /call/web request goes
+      // through our own server-side proxy. This avoids browser-level blocks
+      // (ad blockers, extensions, network issues) on api.vapi.ai.
+      try {
+        // The SDK uses a shared singleton API client at @vapi-ai/web/dist/client
+        const clientModule = await import('@vapi-ai/web/dist/client')
+        const apiClient = (clientModule as any).client ?? (clientModule as any).default?.client
+        if (apiClient) {
+          const originalFetch = apiClient.customFetch?.bind(apiClient) ?? fetch
+          apiClient.customFetch = async (url: string, init: RequestInit) => {
+            if (typeof url === 'string' && url.includes('/call/web') && init?.method?.toUpperCase() === 'POST') {
+              console.log('[vapi] routing /call/web through server proxy')
+              return fetch('/api/interview/vapi-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: init.body,
+              })
+            }
+            return originalFetch(url, init)
+          }
+        }
+      } catch (patchErr) {
+        console.warn('[vapi] Could not patch fetch — will use direct SDK calls', patchErr)
+      }
+
+
       // Wire events. The SDK emits 'message' for transcript fragments,
       // 'call-start'/'call-end' for lifecycle, 'error' on anything bad.
       vapi.on('call-start', () => {
