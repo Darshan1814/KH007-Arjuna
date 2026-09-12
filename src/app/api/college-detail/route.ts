@@ -215,7 +215,7 @@ async function buildReviewQueries(input: DetailInput): Promise<string[]> {
 
   try {
     const resp = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
       contents: `You plan Google searches to find REAL student and alumni REVIEWS of an Indian college, prioritising Glassdoor.
 
 College: "${input.name}"${where ? ` (${where})` : ''}
@@ -366,8 +366,8 @@ export async function POST(request: Request) {
     })
     const reviewSeen = new Set<string>()
     const reviewCleaned = reviewFlat.filter((r) => {
-      if (!r || !r.snippet) return false
-      const key = r.link || r.snippet
+      if (!r || (!r.snippet && !r.title)) return false
+      const key = r.link || r.snippet || r.title
       if (reviewSeen.has(key)) return false
       reviewSeen.add(key)
       return true
@@ -388,8 +388,8 @@ export async function POST(request: Request) {
       : `No live placement/campus search results were available; use your best factual knowledge of this specific institute. Do not fabricate.`
 
     const reviewBlock = reviewSourceList
-      ? `LIVE STUDENT/ALUMNI REVIEW RESULTS (mostly Glassdoor and other review portals — base the "reviews" array ONLY on the sentiment, ratings, pros and cons expressed in these snippets; do not invent reviews that are not supported here):\n${reviewSourceList}`
-      : `No live review snippets were available; keep the reviews array empty rather than fabricating reviews.`
+      ? `LIVE STUDENT/ALUMNI REVIEW RESULTS (Glassdoor + other portals — paraphrase the sentiment, pros and cons from these into the "reviews" array; titles count when bodies are thin):\n${reviewSourceList}`
+      : `No live review snippets were available; provide at most 2 short generic reviews based on this institute's typical reputation, marked with author "Alumnus".`
 
     const prompt = `You are compiling a factual profile of the REAL Indian college "${label}" (${input.collegeType || 'institute'}), as of ${year - 1}-${year}. The student is primarily interested in the "${input.branch}" branch; include several branches so they can compare.
 
@@ -402,13 +402,13 @@ Produce a JSON object with:
 - overallRating: aggregate student rating out of 5 (one decimal) — derive it from the review snippets/ratings above when present.
 - placements: branch-wise stats for the 4–6 most popular branches (include "${input.branch}" first). For EACH branch, provide a "years" array with one entry per placement year for the LAST 3 YEARS that data exists (e.g. ${year - 1}, ${year - 2}, ${year - 3}), most recent first. Each year entry: year (string), placementRate (% placed, 0–100), avgPackageLPA, medianPackageLPA, highestPackageLPA (annual, INR lakhs per annum), topRecruiters (5–8 real companies). For medical colleges where packages do not apply, use 0 for package figures and list typical hospitals/career paths as recruiters. Ground every number in the placement search results above wherever available.
 - curricula: branch-wise outline for the same branches: durationYears, degree (B.Tech/B.E./MBBS/etc.), and per-year subject lists (3–6 representative subjects each).
-- reviews: 4–6 student/alumni reviews grounded STRICTLY in the LIVE REVIEW RESULTS block above (Glassdoor + other portals). Paraphrase the real sentiment, pros and cons expressed in those snippets — do NOT invent reviews that aren't supported by them. Each: author ("Alumnus"/"Current student" or a first name if present), rating (0–5, matching the source where stated), batch, branch, pros, cons, comment, and sourceUrl set to the review's source link from the block. If the review block is empty, return an empty reviews array.
+- reviews: 4–6 student/alumni reviews grounded in the LIVE REVIEW RESULTS block above (Glassdoor + other portals). Paraphrase the sentiment, pros and cons expressed in those snippets and titles. If a snippet only carries a star rating, page title, or a short note, still extract a brief review from it (1-2 sentences each for pros/cons). Aim for at least 4 reviews even when snippets are thin — better to summarise each available source as one short review than to return an empty array. Each: author ("Alumnus"/"Current student" or a first name if present), rating (0–5, matching the source where stated, otherwise estimate 3.5–4.5 based on tone), batch, branch, pros, cons, comment, and sourceUrl set to the review's source link from the block.
 - campus: established year, campusSizeAcres, hostelAvailable (boolean), facilities (8–12), accreditation (e.g. NAAC A++, NBA, AICTE, UGC), nirfRank (NIRF rank if applicable), location, and a short summary.
 - quickStats: 4–6 label/value highlight pairs (e.g. "NIRF Rank" → "16", "Avg Package" → "₹14 LPA", "Established" → "1958").
 
 RULES: Use genuine figures grounded in the search results above wherever possible. Where a precise number is not in the results, give a realistic estimate consistent with this institute's tier. Never invent awards, fake recruiters, fabricated rankings, or reviews unsupported by the review block.`
 
-    const GEMINI_TIMEOUT_MS = 35_000
+    const GEMINI_TIMEOUT_MS = 90_000
     const abortController = new AbortController()
     const timeoutId = setTimeout(() => abortController.abort(), GEMINI_TIMEOUT_MS)
 
@@ -540,7 +540,7 @@ RULES: Use genuine figures grounded in the search results above wherever possibl
       source: sourceList || reviewSourceList ? 'serper+gemini' : 'gemini',
     })
   } catch (err) {
-    console.warn('College-detail route falling back:', err)
-    return NextResponse.json({ detail: buildFallback(input), sources: [], source: 'fallback' })
+    console.warn('College-detail route falling back:', err instanceof Error ? `${err.name}: ${err.message}` : err)
+    return NextResponse.json({ detail: buildFallback(input), sources: [], source: 'fallback', error: err instanceof Error ? err.message : 'Unknown' })
   }
 }

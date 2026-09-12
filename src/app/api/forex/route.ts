@@ -76,6 +76,28 @@ function staticRate(from: string, to: string): number | null {
 }
 
 async function fetchPublicRate(from: string, to: string): Promise<number | null> {
+  // Primary: exchangerate-api.com (paid key set in EXCHANGE_RATE_API_KEY).
+  // Returns the official mid-market spot rate, refreshed daily.
+  const key = process.env.EXCHANGE_RATE_API_KEY
+  if (key) {
+    try {
+      const res = await fetch(
+        `https://v6.exchangerate-api.com/v6/${key}/pair/${encodeURIComponent(from)}/${encodeURIComponent(to)}`,
+        { cache: 'no-store' },
+      )
+      if (res.ok) {
+        const data = await res.json()
+        if (data?.result === 'success') {
+          const rate = Number(data.conversion_rate)
+          if (rate && isFinite(rate) && rate > 0) return rate
+        }
+      }
+    } catch {
+      // fall through to the secondary source
+    }
+  }
+
+  // Secondary: exchangerate.host — free, no key required.
   try {
     const res = await fetch(
       `https://api.exchangerate.host/convert?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&amount=1`,
@@ -133,11 +155,11 @@ export async function GET(request: Request) {
   }
 
   let rate: number | null = await fetchPublicRate(from, to)
-  let source = 'exchangerate.host'
+  let source = process.env.EXCHANGE_RATE_API_KEY ? 'exchangerate-api' : 'exchangerate.host'
 
   if (!rate) {
     rate = await fetchGeminiRate(from, to)
-    source = rate ? 'gemini' : source
+    source = rate ? 'ai-fallback' : source
   }
 
   if (!rate) {

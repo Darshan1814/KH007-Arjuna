@@ -3,14 +3,13 @@
 import { useAppStore } from '@/lib/store'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
-  Home, Users, MessageSquare, ShieldCheck, Banknote, LogOut, Menu, X, Sparkles, UserPlus
+  Home, Users, MessageSquare, ShieldCheck, LogOut, Menu, X, Sparkles, UserPlus
 } from 'lucide-react'
 import { Toaster, toast } from 'react-hot-toast'
 import ExpertHome from './pages/expert/ExpertHome'
 import ExpertStudents from './pages/expert/ExpertStudents'
 import ExpertChat from './pages/expert/ExpertChat'
 import ExpertKYC from './pages/expert/ExpertKYC'
-import ExpertEarnings from './pages/expert/ExpertEarnings'
 import ExpertRequests from './pages/expert/ExpertRequests'
 import { createClient } from '@/lib/supabase/client'
 import { usePresence } from '@/lib/usePresence'
@@ -20,7 +19,6 @@ const expertNavItems = [
   { id: 'expert-requests', label: 'Connection Requests', icon: UserPlus },
   { id: 'expert-students', label: 'My Students', icon: Users },
   { id: 'expert-chat', label: 'Student Chats', icon: MessageSquare },
-  { id: 'expert-earnings', label: 'Earnings', icon: Banknote },
   { id: 'expert-kyc', label: 'KYC Verification', icon: ShieldCheck },
 ]
 
@@ -132,7 +130,6 @@ export default function ExpertLayout() {
             <div className={currentPage === 'expert-students' ? 'block h-full' : 'hidden'}><ExpertStudents /></div>
             <div className={currentPage === 'expert-chat' ? 'block h-full' : 'hidden'}><ExpertChat /></div>
             <div className={currentPage === 'expert-kyc' ? 'block h-full' : 'hidden'}><ExpertKYC /></div>
-            <div className={currentPage === 'expert-earnings' ? 'block h-full' : 'hidden'}><ExpertEarnings /></div>
           </div>
         </main>
       </div>

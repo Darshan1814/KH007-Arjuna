@@ -656,9 +656,12 @@ export default function ROICalculator({
                   </strong>{' '}
                   {toCountry.currency}
                 </span>
-                <span>·</span>
-                <span>{fxSource || 'cached'}</span>
-                {fxStamp && <span>· {fxStamp}</span>}
+                {fxStamp && (
+                  <>
+                    <span>·</span>
+                    <span>updated {fxStamp}</span>
+                  </>
+                )}
                 <button
                   onClick={() => fetchFx(true)}
                   title="Refresh FX"
