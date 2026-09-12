@@ -6,7 +6,8 @@
 // which sidebar entries to render given the user's derived track. The four
 // track-specific pages partition cleanly:
 //
-//   visa-simulator                / currency-risk            => abroad-only
+//   visa-simulator   / currency-risk / ai-journey / roi-calculator /
+//   loan-center                                              => abroad-only
 //   domestic-admission-predictor  / domestic-loan-center     => domestic-only
 //
 // All other pages are unconditionally visible. When `track === 'both'` the
@@ -40,6 +41,14 @@ describe('Property 9: sidebar visibility per track', () => {
       expect(isItemVisible('currency-risk', 'both')).toBe(true)
     })
 
+    it('ai-journey / roi-calculator / loan-center: visible for abroad and both, hidden for domestic', () => {
+      for (const page of ['ai-journey', 'roi-calculator', 'loan-center'] as const) {
+        expect(isItemVisible(page, 'abroad')).toBe(true)
+        expect(isItemVisible(page, 'domestic')).toBe(false)
+        expect(isItemVisible(page, 'both')).toBe(true)
+      }
+    })
+
     it('domestic-admission-predictor: hidden for abroad, visible for domestic and both', () => {
       expect(isItemVisible('domestic-admission-predictor', 'abroad')).toBe(false)
       expect(isItemVisible('domestic-admission-predictor', 'domestic')).toBe(true)
@@ -61,7 +70,7 @@ describe('Property 9: sidebar visibility per track', () => {
           'dashboard',
           'profile',
           'sop-copilot',
-          'roi-calculator',
+          'emi-calculator',
         ),
         fc.constantFrom<Track>(...TRACKS),
         (page, track) => isItemVisible(page, track) === true,

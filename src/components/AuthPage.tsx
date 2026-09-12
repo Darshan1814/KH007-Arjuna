@@ -1,13 +1,30 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { motion } from 'framer-motion'
-import { Sparkles, ArrowRight, Loader2, ShieldCheck, GraduationCap, Briefcase } from 'lucide-react'
+import { Sparkles, ArrowRight, Loader2, ShieldCheck, Briefcase } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAppStore } from '@/lib/store'
 
+type Role = 'student' | 'expert' | 'admin'
+
+// The login "portal" is chosen by the URL, NOT by a visible tab. In production
+// only the student portal is reachable from the public UI; the expert and admin
+// portals live behind two unlisted links:
+//   /?portal=expert   → Agent / Expert login
+//   /?portal=admin    → Admin console login
+// Anything else (no param / unknown) falls back to the student portal.
+function resolvePortal(): Role {
+  if (typeof window === 'undefined') return 'student'
+  const p = new URLSearchParams(window.location.search).get('portal')?.toLowerCase()
+  if (p === 'admin') return 'admin'
+  if (p === 'expert' || p === 'agent') return 'expert'
+  return 'student'
+}
+
 export default function AuthPage() {
   const { setUser, updateProfile, setOnboarded } = useAppStore()
-  const [role, setRole] = useState<'student' | 'expert' | 'admin'>('student')
+  // Role is fixed by the portal (URL), not user-selectable.
+  const [role] = useState<Role>(() => resolvePortal())
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLogin, setIsLogin] = useState(true)
@@ -15,14 +32,30 @@ export default function AuthPage() {
   const [error, setError] = useState<string | null>(null)
   const [specialization, setSpecialization] = useState('')
   const [name, setName] = useState('')
-  
+
   const supabase = createClient()
+
+  // Admin accounts are never self-service: no public signup on the admin portal.
+  const allowSignup = role !== 'admin'
+
+  // Map the portal to the role(s) a logged-in account must actually have in the
+  // database. This is the gate that stops a student logging into the expert /
+  // admin portal (and vice-versa).
+  const portalAllowsRole = (dbRole: string | null | undefined): boolean => {
+    const r = (dbRole || 'student').toLowerCase()
+    if (role === 'admin') return r === 'admin'
+    if (role === 'expert') return r === 'expert'
+    // Student portal: only genuine students. Experts/admins must use their portal.
+    return r !== 'admin' && r !== 'expert'
+  }
+
+  const portalLabel =
+    role === 'admin' ? 'Admin' : role === 'expert' ? 'Agent' : 'Student'
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
-    
 
     try {
       if (isLogin) {
@@ -39,18 +72,38 @@ export default function AuthPage() {
           password: loginPassword,
         })
         if (error) throw error
-        
-        // Healing Logic: If they log in via the Agent tab, ensure the database explicitly knows they are an expert
-        // This fixes older accounts that were created before the database race-condition was patched
-        if (role === 'expert' && data.user) {
-          await supabase.from('profiles')
-            .update({ role: 'expert', is_onboarded: true })
+
+        // ── Access control ──────────────────────────────────────────────
+        // Read the account's REAL role from the database and confirm it is
+        // allowed on this portal. A mismatch (e.g. a student using the expert
+        // link, or an expert using the student tab) is rejected and the
+        // session is torn down immediately. We no longer "heal"/promote the
+        // account to match the tab — that was the cross-role bypass.
+        if (data.user) {
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('role, is_onboarded')
             .eq('id', data.user.id)
+            .maybeSingle()
+
+          if (!portalAllowsRole(prof?.role)) {
+            await supabase.auth.signOut()
+            setUser(null)
+            throw new Error(
+              role === 'student'
+                ? 'This account is not a student account. Please use the correct portal.'
+                : `This account is not authorized for the ${portalLabel} portal.`,
+            )
+          }
+
+          const realRole = (prof?.role || 'student') as Role
+          updateProfile({
+            id: data.user.id,
+            role: realRole,
+            isOnboarded: realRole === 'expert' ? true : !!prof?.is_onboarded,
+          })
         }
-        
-        // Aggressively update local store based on the login tab selected to avoid Onboarding flash
-        updateProfile({ role: role === 'admin' ? 'student' : role, isOnboarded: role === 'expert' })
-        
+
         toast.success('Welcome back to EduFinAI!')
       } else {
         const { data, error } = await supabase.auth.signUp({
@@ -68,24 +121,29 @@ export default function AuthPage() {
             if (signInError) throw signInError
           }
 
+          // Only the expert portal may create expert accounts; everything else
+          // (the public student portal) creates a plain student. Admins are
+          // never created through signup.
+          const signupRole: Role = role === 'expert' ? 'expert' : 'student'
+
           // Supabase background triggers can take a moment to create the profile row.
           // We will retry the update up to 5 times to prevent race conditions.
           let updateSuccess = false;
           let retries = 0;
-          
+
           let lastUpdateError: any = null;
-          
+
           while (!updateSuccess && retries < 5) {
             const { data: updatedRows, error: updateError } = await supabase.from('profiles')
               .update({
-                role: role === 'admin' ? 'student' : role, // don't allow real admin signup
-                name: role === 'expert' ? name : null,
-                is_onboarded: role === 'expert', // experts don't need the 9-step student onboarding
-                expert_specializations: role === 'expert' && specialization ? [specialization] : []
+                role: signupRole,
+                name: signupRole === 'expert' ? name : null,
+                is_onboarded: signupRole === 'expert', // experts don't need the 9-step student onboarding
+                expert_specializations: signupRole === 'expert' && specialization ? [specialization] : []
               })
               .eq('id', data.user.id)
               .select() // Force returning data to check if rows were actually affected
-            
+
             if (!updateError && updatedRows && updatedRows.length > 0) {
               updateSuccess = true;
             } else {
@@ -100,7 +158,7 @@ export default function AuthPage() {
             toast.error('Failed to fully initialize profile. Please sign in again.')
           }
 
-          updateProfile({ id: data.user.id, role: role === 'admin' ? 'student' : role, isOnboarded: role === 'expert' })
+          updateProfile({ id: data.user.id, role: signupRole, isOnboarded: signupRole === 'expert' })
         }
 
         toast.success('Account created successfully! Check your email to confirm.')
@@ -152,28 +210,30 @@ export default function AuthPage() {
           className="glass py-8 px-4 shadow-xl sm:rounded-xl sm:px-10"
         >
           <form className="space-y-6" onSubmit={handleAuth}>
-            
-            {/* Role Selection */}
-            <div className="flex bg-black/20 p-1 rounded-xl mb-6 border border-white/5">
-              <button 
-                type="button" onClick={() => setRole('student')}
-                className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${role === 'student' ? 'bg-primary text-white shadow-md' : 'text-foreground-muted hover:text-foreground'}`}
+
+            {/* Portal indicator — the role is fixed by the URL, not selectable.
+                On the public student portal we show nothing (clean student
+                login). The hidden expert/admin links show a small badge so the
+                operator knows which console they're signing into. */}
+            {role !== 'student' && (
+              <div
+                className={`flex items-center justify-center gap-2 py-2.5 rounded-xl mb-2 border text-[11px] font-bold uppercase tracking-wider ${
+                  role === 'admin'
+                    ? 'bg-red-500/10 border-red-500/30 text-red-400'
+                    : 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400'
+                }`}
               >
-                <GraduationCap className="w-3.5 h-3.5" /> Student
-              </button>
-              <button 
-                type="button" onClick={() => setRole('expert')}
-                className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${role === 'expert' ? 'bg-indigo-500 text-white shadow-md' : 'text-foreground-muted hover:text-foreground'}`}
-              >
-                <Briefcase className="w-3.5 h-3.5" /> Agent
-              </button>
-              <button 
-                type="button" onClick={() => setRole('admin')}
-                className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${role === 'admin' ? 'bg-red-500 text-white shadow-md' : 'text-foreground-muted hover:text-foreground'}`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5" /> Admin
-              </button>
-            </div>
+                {role === 'admin' ? (
+                  <>
+                    <ShieldCheck className="w-3.5 h-3.5" /> Admin Console
+                  </>
+                ) : (
+                  <>
+                    <Briefcase className="w-3.5 h-3.5" /> Agent / Expert Portal
+                  </>
+                )}
+              </div>
+            )}
 
             {error && (
               <div className="p-3 rounded-md bg-danger/10 border border-danger/20 text-danger text-sm">
@@ -267,30 +327,32 @@ export default function AuthPage() {
             </div>
           </form>
 
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-border" />
+          {allowSignup && (
+            <div className="mt-6">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-surface-glass text-foreground-muted">
+                    {isLogin ? 'New to EduFinAI?' : 'Already have an account?'}
+                  </span>
+                </div>
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-surface-glass text-foreground-muted">
-                  {isLogin ? 'New to EduFinAI?' : 'Already have an account?'}
-                </span>
-              </div>
-            </div>
 
-            <div className="mt-6 text-center">
-              <button
-                onClick={() => {
-                  setIsLogin(!isLogin)
-                  setError(null)
-                }}
-                className="text-primary hover:text-primary-light font-medium transition-colors"
-              >
-                {isLogin ? 'Create an account' : 'Sign in to your account'}
-              </button>
+              <div className="mt-6 text-center">
+                <button
+                  onClick={() => {
+                    setIsLogin(!isLogin)
+                    setError(null)
+                  }}
+                  className="text-primary hover:text-primary-light font-medium transition-colors"
+                >
+                  {isLogin ? 'Create an account' : 'Sign in to your account'}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </motion.div>
       </div>
     </div>

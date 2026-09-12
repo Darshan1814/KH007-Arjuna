@@ -6,6 +6,9 @@
 //
 //   visa-simulator            -> abroad-only (hidden when track === 'domestic')
 //   currency-risk             -> abroad-only (hidden when track === 'domestic')
+//   ai-journey                -> abroad-only (hidden when track === 'domestic')
+//   roi-calculator            -> abroad-only (hidden when track === 'domestic')
+//   loan-center               -> abroad-only (hidden when track === 'domestic')
 //   domestic-admission-predictor -> domestic-only (hidden when track === 'abroad')
 //   domestic-loan-center      -> domestic-only (hidden when track === 'abroad')
 //
@@ -16,15 +19,29 @@
 import type { PageType } from './types'
 import type { Track } from './useTrack'
 
+// Pages that only make sense for an abroad applicant. Hidden when the user is
+// on the domestic-only track. (Currency Risk / Visa are abroad concepts; the
+// AI Education Journey, ROI Calculator and Loan Center are abroad-oriented and
+// have domestic counterparts where relevant.)
+const ABROAD_ONLY_PAGES: PageType[] = [
+  'visa-simulator',
+  'currency-risk',
+  'ai-journey',
+  'roi-calculator',
+  'loan-center',
+]
+
+const DOMESTIC_ONLY_PAGES: PageType[] = [
+  'domestic-admission-predictor',
+  'domestic-loan-center',
+]
+
 export function isItemVisible(page: PageType, track: Track): boolean {
   if (track === 'abroad') {
-    return (
-      page !== 'domestic-admission-predictor' &&
-      page !== 'domestic-loan-center'
-    )
+    return !DOMESTIC_ONLY_PAGES.includes(page)
   }
   if (track === 'domestic') {
-    return page !== 'visa-simulator' && page !== 'currency-risk'
+    return !ABROAD_ONLY_PAGES.includes(page)
   }
   return true
 }

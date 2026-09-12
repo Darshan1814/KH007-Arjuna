@@ -13,7 +13,7 @@ export default function VideoCallModal({
   isAudioOnly = false,
   isCaller = false,
   sendWebRTCSignal,
-  webRTCSignal
+  webRTCSignals
 }: { 
   callState: CallState
   onAccept: () => void
@@ -23,7 +23,7 @@ export default function VideoCallModal({
   isAudioOnly?: boolean
   isCaller?: boolean
   sendWebRTCSignal: (payload: any) => void
-  webRTCSignal: any
+  webRTCSignals: any[]
 }) {
   const [duration, setDuration] = useState(0)
   const [isMuted, setIsMuted] = useState(false)
@@ -70,27 +70,29 @@ export default function VideoCallModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callState])
 
-  // Handle every incoming WebRTC signal. We dedupe (the remote may resend
-  // SDP via the realtime fetcher's "missed signals" pass) and we BUFFER
-  // anything that arrives before the local PC is ready instead of
-  // discarding it — that race was why no remote video ever showed up.
+  // Handle every incoming WebRTC signal. The parent passes an append-only
+  // queue (1 SDP + many ICE per negotiation). We process every entry we
+  // haven't seen yet, dedupe (a message may appear in both the realtime feed
+  // and the bootstrap fetch), and BUFFER anything that arrives before the
+  // local PC is ready instead of discarding it.
   useEffect(() => {
-    if (!webRTCSignal || callState !== 'connected') return
-    if (webRTCSignal.type !== 'SDP' && webRTCSignal.type !== 'ICE') return
+    if (!Array.isArray(webRTCSignals) || callState !== 'connected') return
 
-    // Dedupe so a message appearing in both the realtime feed and the
-    // bootstrap fetch isn't applied twice.
-    const fingerprint = JSON.stringify(webRTCSignal)
-    if (seenSignalsRef.current.has(fingerprint)) return
-    seenSignalsRef.current.add(fingerprint)
+    for (const sig of webRTCSignals) {
+      if (!sig || (sig.type !== 'SDP' && sig.type !== 'ICE')) continue
 
-    if (!pcRef.current) {
-      pendingSignalsRef.current.push(webRTCSignal)
-      return
+      const fingerprint = sig._id ?? JSON.stringify(sig)
+      if (seenSignalsRef.current.has(fingerprint)) continue
+      seenSignalsRef.current.add(fingerprint)
+
+      if (!pcRef.current) {
+        pendingSignalsRef.current.push(sig)
+        continue
+      }
+      handleSignaling(sig)
     }
-    handleSignaling(webRTCSignal)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [webRTCSignal, callState])
+  }, [webRTCSignals, callState])
 
   const drainPendingSignals = async () => {
     const queue = pendingSignalsRef.current
@@ -274,6 +276,7 @@ export default function VideoCallModal({
                   autoPlay 
                   playsInline 
                   className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}
                 />
 
                 {/* Connecting placeholder while we wait for the remote track */}
@@ -297,7 +300,7 @@ export default function VideoCallModal({
                     autoPlay 
                     playsInline 
                     muted
-                    className="w-full h-full object-cover mirror"
+                    className="w-full h-full object-cover"
                     style={{ transform: 'scaleX(-1)' }}
                   />
                   {isVideoOff && (

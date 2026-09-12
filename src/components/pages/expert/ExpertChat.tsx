@@ -29,7 +29,14 @@ export default function ExpertChat() {
   // Call States
   const [callState, setCallState] = useState<CallState>('idle')
   const [isAudioOnly, setIsAudioOnly] = useState(false)
-  const [webRTCSignal, setWebRTCSignal] = useState<any>(null)
+  // Append-only queue of WebRTC signals (1 SDP + many ICE per negotiation).
+  // A single state slot would drop intermediate signals.
+  const [webRTCSignals, setWebRTCSignals] = useState<any[]>([])
+  const pushSignal = (sig: any) =>
+    setWebRTCSignals((prev) => [...prev, { ...sig, _id: `${Date.now()}-${Math.random()}` }])
+  // Stable "am I the caller?" flag (persists across calling/incoming →
+  // connected; both peers are 'connected' once the call starts).
+  const [isCaller, setIsCaller] = useState(false)
   const channelRef = useRef<any>(null)
 
   // Heartbeat: write our last_seen every 30s while this page is mounted, plus
@@ -119,11 +126,12 @@ export default function ExpertChat() {
               const sigData = JSON.parse(lastSignal.content)
               if (sigData.type === 'OFFER') {
                 setIsAudioOnly(sigData.audioOnly)
+                setIsCaller(false)
                 setCallState('incoming')
-                setWebRTCSignal(sigData)
+                pushSignal(sigData)
               } else if (sigData.type === 'ACCEPT') {
                 setCallState('connected')
-                setWebRTCSignal(sigData)
+                pushSignal(sigData)
               }
             } catch (e) {}
           }
@@ -153,16 +161,17 @@ export default function ExpertChat() {
             const signal = JSON.parse(newMsg.content)
             if (signal.type === 'OFFER') {
               setIsAudioOnly(signal.audioOnly)
+              setIsCaller(false)
               setCallState('incoming')
-              setWebRTCSignal(signal)
+              pushSignal(signal)
             } else if (signal.type === 'ACCEPT') {
               setCallState('connected')
-              setWebRTCSignal(signal)
+              pushSignal(signal)
             } else if (signal.type === 'DECLINE' || signal.type === 'END') {
               setCallState('idle')
-              setWebRTCSignal(null)
+              setWebRTCSignals([])
             } else if (signal.type === 'SDP' || signal.type === 'ICE') {
-              setWebRTCSignal(signal)
+              pushSignal(signal)
             }
           } catch (e) {}
           return // Do not add signal messages to the UI state
@@ -241,22 +250,27 @@ export default function ExpertChat() {
 
   const handleStartCall = async (audioOnly: boolean) => {
     setIsAudioOnly(audioOnly)
+    setIsCaller(true)
+    setWebRTCSignals([])
     setCallState('calling')
     await sendSignal({ type: 'OFFER', audioOnly })
   }
 
   const handleAcceptCall = async () => {
+    setIsCaller(false)
     setCallState('connected')
     await sendSignal({ type: 'ACCEPT' })
   }
 
   const handleEndCall = async () => {
     setCallState('idle')
+    setWebRTCSignals([])
     await sendSignal({ type: 'END' })
   }
 
   const handleDeclineCall = async () => {
     setCallState('idle')
+    setWebRTCSignals([])
     await sendSignal({ type: 'DECLINE' })
   }
 
@@ -484,9 +498,9 @@ export default function ExpertChat() {
             onEnd={handleEndCall}
             userName={student.name || 'Student'}
             isAudioOnly={isAudioOnly}
-            isCaller={callState === 'calling'}
+            isCaller={isCaller}
             sendWebRTCSignal={sendSignal}
-            webRTCSignal={webRTCSignal}
+            webRTCSignals={webRTCSignals}
           />
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">

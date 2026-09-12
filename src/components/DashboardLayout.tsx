@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/lib/store'
 import { useTrack } from '@/lib/useTrack'
-import { filterNavSections } from '@/lib/navVisibility'
+import { filterNavSections, isItemVisible } from '@/lib/navVisibility'
 import {
   GraduationCap, LayoutDashboard, Brain, Target, TrendingUp,
   DollarSign, Calculator, MessageCircle,
@@ -151,6 +151,15 @@ export default function DashboardLayout() {
   const { currentPage, setCurrentPage, sidebarOpen, toggleSidebar, profile, theme, toggleTheme } = useAppStore()
   const track = useTrack()
   const visibleNavSections = useMemo(() => filterNavSections(navSections, track), [track])
+
+  // If the active page is hidden for the current track (e.g. the user was on
+  // Loan Center then switched to the domestic-only track), bounce them to the
+  // dashboard so they never view a track-inappropriate page.
+  useEffect(() => {
+    if (!isItemVisible(currentPage, track) && currentPage !== 'dashboard') {
+      setCurrentPage('dashboard')
+    }
+  }, [track, currentPage, setCurrentPage])
 
   // Track which persistent pages have ever been visited; once visited they
   // stay mounted (display:none) so navigating back preserves their state.

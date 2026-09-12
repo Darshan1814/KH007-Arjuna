@@ -106,9 +106,16 @@ const loadGoogleMapsScript = (key: string | undefined): Promise<void> => {
 // component is still mounted, and tears down cleanly. Eliminates the
 // "Input ref must be HTMLInputElement" race that fires when the onboarding
 // step unmounts before the script resolves.
-function useGooglePlaces(onPlaceSelected: (place: any) => void) {
+function useGooglePlaces(
+  onPlaceSelected: (place: any) => void,
+  options?: { types?: string[]; fields?: string[] },
+) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const autocompleteRef = useRef<any>(null)
+  const types = options?.types ?? ['(cities)']
+  const fields = options?.fields ?? ['address_components', 'formatted_address', 'name', 'geometry']
+  // Stable key so the effect re-runs only if the configured types actually change.
+  const typesKey = types.join(',')
 
   useEffect(() => {
     let cancelled = false
@@ -122,8 +129,8 @@ function useGooglePlaces(onPlaceSelected: (place: any) => void) {
         if (!(inputRef.current instanceof HTMLInputElement)) return
 
         autocompleteRef.current = new w.google.maps.places.Autocomplete(inputRef.current, {
-          types: ['(cities)'],
-          fields: ['address_components', 'formatted_address', 'name', 'geometry'],
+          types,
+          fields,
         })
         listener = autocompleteRef.current.addListener('place_changed', () => {
           const place = autocompleteRef.current?.getPlace()
@@ -140,7 +147,7 @@ function useGooglePlaces(onPlaceSelected: (place: any) => void) {
       autocompleteRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [typesKey])
 
   // Always read the latest callback without retriggering the effect.
   const onPlaceSelectedRef = useRef(onPlaceSelected)
@@ -254,9 +261,10 @@ const MultiAutocomplete = ({ label, field, placeholder, localData, updateLocal }
   const inputId = `multi-auto-${field}`
 
   const handleAdd = (placeName: string) => {
-    if (!placeName) return
-    if (!list.includes(placeName)) {
-      updateLocal(field, [...list, placeName])
+    const name = placeName.trim()
+    if (!name) return
+    if (!list.includes(name)) {
+      updateLocal(field, [...list, name])
     }
   }
 
@@ -264,12 +272,40 @@ const MultiAutocomplete = ({ label, field, placeholder, localData, updateLocal }
     updateLocal(field, list.filter(i => i !== item))
   }
 
+  // Google Places autocomplete tuned for universities/colleges. When the user
+  // picks a suggestion we add its name as a chip and clear the input. The
+  // input element is reached via the ref returned by the hook.
+  const inputElRef = useRef<HTMLInputElement | null>(null)
+  const handlePlace = useCallback(
+    (place: any) => {
+      const name = (place?.name || place?.formatted_address || '').trim()
+      if (!name) return
+      updateLocal(
+        field,
+        list.includes(name) ? list : [...list, name],
+      )
+      if (inputElRef.current) inputElRef.current.value = ''
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [list, field],
+  )
+
+  const placesRef = useGooglePlaces(handlePlace, { types: ['university'] })
+  // Keep our own handle to the same input node the hook attaches to.
+  const setRefs = useCallback(
+    (node: HTMLInputElement | null) => {
+      inputElRef.current = node
+      ;(placesRef as any).current = node
+    },
+    [placesRef],
+  )
 
   return (
     <div className="mb-4">
       <label className="block text-sm font-medium text-foreground-secondary mb-1">{label}</label>
         <input
           id={inputId}
+          ref={setRefs}
           type="text"
           className="input-field"
           placeholder={placeholder}
@@ -281,6 +317,11 @@ const MultiAutocomplete = ({ label, field, placeholder, localData, updateLocal }
             }
           }}
         />
+      {!GOOGLE_MAPS_KEY && (
+        <p className="text-xs text-foreground-muted mt-1">
+          Type a name and press Enter (live suggestions unavailable)
+        </p>
+      )}
       {list.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-2">
           {list.map(item => (
@@ -650,19 +691,23 @@ export default function OnboardingFlow() {
         return (
           <div className="space-y-4">
             <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><BookOpen /> Exam Profile</h2>
-            {boundInput({ label: "GRE Status", field: "greStatus", options: ['Appeared', 'Planning', 'Not Required', 'NA'] })}
-            {localData.greStatus === 'Appeared' && boundInput({ label: "GRE Score", field: "greScoreStr" })}
-            
-            {boundInput({ label: "GMAT Status", field: "gmatStatus", options: ['Appeared', 'Planning', 'Not Required', 'NA'] })}
-            {localData.gmatStatus === 'Appeared' && boundInput({ label: "GMAT Score", field: "gmatScoreStr" })}
-            
-            {boundInput({ label: "IELTS Status", field: "ieltsStatus", options: ['Appeared', 'Planning', 'NA'] })}
-            {localData.ieltsStatus === 'Appeared' && boundInput({ label: "IELTS Score", field: "ieltsScore" })}
-            
-            {boundInput({ label: "TOEFL Status", field: "toeflStatus", options: ['Appeared', 'Planning', 'NA'] })}
-            {localData.toeflStatus === 'Appeared' && boundInput({ label: "TOEFL Score", field: "toeflScore" })}
-            
-            {boundInput({ label: "Next Planned Exam Date", field: "examNextDate", type: "date" })}
+            {(track === 'abroad' || track === 'both') && (
+              <>
+                {boundInput({ label: "GRE Status", field: "greStatus", options: ['Appeared', 'Planning', 'Not Required', 'NA'] })}
+                {localData.greStatus === 'Appeared' && boundInput({ label: "GRE Score", field: "greScoreStr" })}
+
+                {boundInput({ label: "GMAT Status", field: "gmatStatus", options: ['Appeared', 'Planning', 'Not Required', 'NA'] })}
+                {localData.gmatStatus === 'Appeared' && boundInput({ label: "GMAT Score", field: "gmatScoreStr" })}
+
+                {boundInput({ label: "IELTS Status", field: "ieltsStatus", options: ['Appeared', 'Planning', 'NA'] })}
+                {localData.ieltsStatus === 'Appeared' && boundInput({ label: "IELTS Score", field: "ieltsScore" })}
+
+                {boundInput({ label: "TOEFL Status", field: "toeflStatus", options: ['Appeared', 'Planning', 'NA'] })}
+                {localData.toeflStatus === 'Appeared' && boundInput({ label: "TOEFL Score", field: "toeflScore" })}
+
+                {boundInput({ label: "Next Planned Exam Date", field: "examNextDate", type: "date" })}
+              </>
+            )}
 
             {(track === 'domestic' || track === 'both') && (
               <div className="mt-6 pt-6 border-t border-border space-y-4">

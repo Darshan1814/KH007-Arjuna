@@ -24,6 +24,7 @@ import {
   Award,
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
+import { useTrack } from '@/lib/useTrack'
 import { createClient } from '@/lib/supabase/client'
 import toast from 'react-hot-toast'
 
@@ -112,16 +113,6 @@ const SECTIONS: { title: string; icon: any; fields: Field[] }[] = [
       { key: 'ielts_score', label: 'IELTS Score' },
       { key: 'toefl_status', label: 'TOEFL Status', type: 'select', options: ['Appeared', 'Planning', 'NA'] },
       { key: 'toefl_score', label: 'TOEFL Score' },
-      { key: 'gate_status', label: 'GATE Status', type: 'select', options: ['Appeared', 'Planning', 'Not Required', 'NA'] },
-      { key: 'gate_score', label: 'GATE Score' },
-      { key: 'cat_status', label: 'CAT Status', type: 'select', options: ['Appeared', 'Planning', 'Not Required', 'NA'] },
-      { key: 'cat_score', label: 'CAT Score' },
-      { key: 'jee_status', label: 'JEE Status', type: 'select', options: ['Appeared', 'Planning', 'Not Required', 'NA'] },
-      { key: 'jee_score', label: 'JEE Score' },
-      { key: 'neet_status', label: 'NEET Status', type: 'select', options: ['Appeared', 'Planning', 'Not Required', 'NA'] },
-      { key: 'neet_score', label: 'NEET Score' },
-      { key: 'cet_status', label: 'CET Status', type: 'select', options: ['Appeared', 'Planning', 'Not Required', 'NA'] },
-      { key: 'cet_score', label: 'CET Score' },
       { key: 'exam_next_date', label: 'Next Exam Date', type: 'date' },
     ],
   },
@@ -176,7 +167,8 @@ const SECTIONS: { title: string; icon: any; fields: Field[] }[] = [
 const SECTION_KEYS = SECTIONS.flatMap((s) => s.fields.map((f) => f.key))
 
 export default function ProfilePage() {
-  const { user, profile, updateProfile } = useAppStore()
+  const { user, profile, updateProfile, setCurrentPage, setTargetOnboardingStep } = useAppStore()
+  const track = useTrack()
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -214,6 +206,17 @@ export default function ProfilePage() {
     if (!row) return
     setDraft(row)
     setEditing(true)
+  }
+
+  // Re-open the original multi-step onboarding flow so the user edits their
+  // profile through the exact same form they filled at signup. The flow reads
+  // from the hydrated `profile` store and writes back to Supabase on save, so
+  // any updates are persisted and reflected here on return. We do NOT clear
+  // the onboarded flag — page.tsx renders the flow whenever currentPage is
+  // 'onboarding', so the user can never get stranded mid-edit.
+  const openOnboardingEditor = () => {
+    setTargetOnboardingStep(1)
+    setCurrentPage('onboarding')
   }
   const cancelEdit = () => {
     if (row) setDraft(row)
@@ -414,7 +417,7 @@ export default function ProfilePage() {
             </div>
 
             {!editing ? (
-              <button onClick={startEdit} className="btn-primary inline-flex items-center justify-center gap-2">
+              <button onClick={openOnboardingEditor} className="btn-primary inline-flex items-center justify-center gap-2">
                 <Edit3 className="w-4 h-4" /> Edit profile
               </button>
             ) : (
@@ -433,7 +436,24 @@ export default function ProfilePage() {
       </motion.div>
 
       {/* SECTIONS */}
-      {SECTIONS.map((section, idx) => (
+      {SECTIONS.map((section, idx) => {
+        // Track-aware filtering. The abroad standardized tests (GRE/GMAT/IELTS/
+        // TOEFL) only make sense for abroad / both. The domestic exams are no
+        // longer static columns — they come from the dynamically-fetched
+        // `entranceExams` the student picked in onboarding — so we render those
+        // separately below for domestic / both.
+        let fields = section.fields
+        const isExamSection = section.title === 'Exam Profile'
+        if (isExamSection && track === 'domestic') {
+          // Domestic-only: drop the abroad tests; keep only the next-exam date.
+          fields = section.fields.filter((f) => f.key === 'exam_next_date')
+        }
+
+        const domesticExams = profile.entranceExams ?? []
+        const showDomesticExams =
+          isExamSection && (track === 'domestic' || track === 'both')
+
+        return (
         <motion.div
           key={section.title}
           initial={{ opacity: 0, y: 10 }}
@@ -453,20 +473,67 @@ export default function ProfilePage() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-            {section.fields.map((field) => (
-              <FieldRow
-                key={field.key}
-                field={field}
-                value={editing ? draft[field.key] : row[field.key]}
-                editing={editing}
-                onChange={(v) => setDraft((d) => ({ ...d, [field.key]: v }))}
-                fmt={fmtValue}
-              />
-            ))}
-          </div>
+          {fields.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+              {fields.map((field) => (
+                <FieldRow
+                  key={field.key}
+                  field={field}
+                  value={editing ? draft[field.key] : row[field.key]}
+                  editing={editing}
+                  onChange={(v) => setDraft((d) => ({ ...d, [field.key]: v }))}
+                  fmt={fmtValue}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Dynamically-fetched Indian entrance exams (domestic / both). */}
+          {showDomesticExams && (
+            <div className={fields.length > 0 ? 'mt-5 pt-5 border-t' : ''} style={{ borderColor: 'var(--border)' }}>
+              <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--foreground-muted)' }}>
+                Indian Entrance Exams
+              </div>
+              {domesticExams.length === 0 ? (
+                <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>
+                  No Indian exams added yet. Use &ldquo;Edit profile&rdquo; to add the exams you appeared for.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {domesticExams.map((e) => (
+                    <div
+                      key={e.id}
+                      className="rounded-lg p-3"
+                      style={{ background: 'var(--background-secondary)', border: '1px solid var(--border)' }}
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>
+                          {e.examName}
+                        </span>
+                        <span className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
+                          {e.stream} · {e.region}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4 mt-1.5 text-xs" style={{ color: 'var(--foreground-secondary)' }}>
+                        {e.rank && e.rank.trim() && (
+                          <span>Rank: <strong style={{ color: 'var(--foreground)' }}>{e.rank}</strong></span>
+                        )}
+                        {e.marks && e.marks.trim() && (
+                          <span>Score: <strong style={{ color: 'var(--foreground)' }}>{e.marks}</strong></span>
+                        )}
+                        {!(e.rank && e.rank.trim()) && !(e.marks && e.marks.trim()) && (
+                          <span style={{ color: 'var(--foreground-muted)' }}>No rank / score entered</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </motion.div>
-      ))}
+        )
+      })}
     </div>
   )
 }
