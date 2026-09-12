@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock' })
 
@@ -143,7 +144,7 @@ Return strict JSON ONLY in the shape below — every field MUST be specifically 
 - moneyTip: one specific money-saving tip for ${country} (1-2 sentences)`
 
     try {
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithFallback(ai, {
         model: 'gemini-2.5-flash',
         contents: prompt,
         config: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0.3 },

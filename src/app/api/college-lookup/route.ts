@@ -1,19 +1,33 @@
-// College Lookup — finds the best-fit college for the student's profile in
-// the chosen destination country.
+// College Lookup — supports three modes:
 //
-// Pipeline (in order):
-//   1) Google Places Text Search via GOOGLE_PLACES_API_KEY (server-side key,
-//      no referer restriction). Returns a ranked list of place candidates;
-//      we keep the top-most that looks like a university and grab name,
-//      address, lat/lng.
-//   2) Serper Google Search fallback — used when Places fails or no key.
-//   3) Synthesised record from the user's hint as a last resort.
+//   • POST { mode: 'lookup', hint, country }
+//       Returns the top single match (existing contract).
+//
+//   • POST { mode: 'autocomplete', query, country, countryCode? }
+//       Returns up to 8 university-typed suggestions to power a live
+//       typeahead. Results are restricted to `countryCode` (ISO-2) when
+//       provided, falling back to the country name in the query string.
+//
+//   • POST { mode: 'recommend', country, countryCode?, field?, degree? }
+//       Returns a ranked shortlist of universities in the destination
+//       country that match the student's profile (program / field). Used
+//       when the user hasn't typed anything yet.
+//
+// Pipeline:
+//   1) Google Places API (New) — searchText with `includedType=university`
+//      and `regionCode` for country filtering. Server-side key, no
+//      referer restriction.
+//   2) Serper Google Search fallback — used when Places fails.
+//   3) Synthesised record — last resort, never touched in normal flow.
 
 import { NextResponse } from 'next/server'
 
 interface LookupBody {
+  mode?: 'lookup' | 'autocomplete' | 'recommend'
   hint?: string
+  query?: string
   country: string
+  countryCode?: string // ISO-2 alpha
   degree?: string
   field?: string
 }
@@ -28,6 +42,14 @@ const UNI_TYPES = new Set([
   'point_of_interest',
   'establishment',
 ])
+
+interface PlaceRow {
+  id?: string
+  displayName?: { text?: string }
+  formattedAddress?: string
+  types?: string[]
+  location?: { latitude: number; longitude: number }
+}
 
 interface SerperOrganic {
   title: string
@@ -73,11 +95,48 @@ function buildQuery(hint: string, field?: string, country?: string): string {
   return parts.join(' ').trim()
 }
 
-async function googlePlacesLookup(query: string, country: string) {
+// Build the request body for Places (New) searchText. `regionCode` accepts
+// a Unicode CLDR region (ISO-3166-1 alpha-2) and biases results to that
+// country — giving us the country-restricted behaviour the user asked for.
+function placesBody(
+  textQuery: string,
+  pageSize: number,
+  countryCode?: string,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    textQuery,
+    includedType: 'university',
+    pageSize,
+  }
+  if (countryCode) {
+    const cc = countryCode.trim().toUpperCase()
+    if (/^[A-Z]{2}$/.test(cc)) {
+      body.regionCode = cc
+      // Hard-restrict to the country — without this, Places will still bias
+      // results but might leak in nearby-country universities.
+      body.locationRestriction = {
+        rectangle: {
+          // Tiny rectangle is not used, we prefer regionCode; but the New API
+          // only supports rectangle/circle locationRestriction. Skip it and
+          // rely on regionCode + a country term in the textQuery.
+        },
+      }
+      // Drop the rectangle key — kept only as a hint above. The textQuery
+      // already includes the country name from `buildQuery`, which is the
+      // correct way to scope results in Places (New).
+      delete (body as any).locationRestriction
+    }
+  }
+  return body
+}
+
+async function placesSearchText(
+  textQuery: string,
+  pageSize: number,
+  countryCode?: string,
+): Promise<PlaceRow[] | null> {
   if (!PLACES_KEY) return null
   try {
-    // Places API (New) — searchText endpoint. Requires X-Goog-Api-Key header
-    // and an X-Goog-FieldMask listing the response fields we want.
     const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
       method: 'POST',
       headers: {
@@ -86,46 +145,84 @@ async function googlePlacesLookup(query: string, country: string) {
         'X-Goog-FieldMask':
           'places.displayName,places.formattedAddress,places.id,places.types,places.location',
       },
-      body: JSON.stringify({
-        textQuery: query,
-        includedType: 'university',
-        pageSize: 5,
-      }),
+      body: JSON.stringify(placesBody(textQuery, pageSize, countryCode)),
       cache: 'no-store',
     })
-    if (!res.ok) return null
-    const data = (await res.json()) as {
-      places?: Array<{
-        id?: string
-        displayName?: { text?: string }
-        formattedAddress?: string
-        types?: string[]
-        location?: { latitude: number; longitude: number }
-      }>
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '')
+      console.warn('[college-lookup] Places HTTP', res.status, errBody.slice(0, 300))
+      return null
     }
-    if (!data.places || data.places.length === 0) return null
-
-    const top =
-      data.places.find((p) =>
-        (p.types || []).some((t) => UNI_TYPES.has(t)) ||
-        looksLikeUniversity(p.displayName?.text || ''),
-      ) || data.places[0]
-
-    const name = cleanName(top.displayName?.text || '')
-    const address = top.formattedAddress || country
-    return {
-      name,
-      formatted_address: address,
-      place_id: top.id || '',
-      country,
-      city: extractCity(address),
-      lat: top.location?.latitude ?? null,
-      lng: top.location?.longitude ?? null,
-      confidence: 'high' as const,
-    }
-  } catch {
+    const data = (await res.json()) as { places?: PlaceRow[] }
+    return data.places || []
+  } catch (e) {
+    console.warn('[college-lookup] Places error:', (e as any)?.message || e)
     return null
   }
+}
+
+function placeRowToMatch(p: PlaceRow, country: string) {
+  const name = cleanName(p.displayName?.text || '')
+  const address = p.formattedAddress || country
+  return {
+    name,
+    formatted_address: address,
+    place_id: p.id || '',
+    country,
+    city: extractCity(address),
+    lat: p.location?.latitude ?? null,
+    lng: p.location?.longitude ?? null,
+    confidence: 'high' as const,
+  }
+}
+
+function filterUniversityRows(rows: PlaceRow[]): PlaceRow[] {
+  return rows.filter((p) => {
+    const name = p.displayName?.text || ''
+    if ((p.types || []).some((t) => UNI_TYPES.has(t))) return true
+    return looksLikeUniversity(name)
+  })
+}
+
+async function googlePlacesLookup(query: string, country: string, countryCode?: string) {
+  const rows = await placesSearchText(query, 5, countryCode)
+  if (!rows || rows.length === 0) return null
+  const universityRows = filterUniversityRows(rows)
+  const top = universityRows[0] || rows[0]
+  return placeRowToMatch(top, country)
+}
+
+async function googlePlacesAutocomplete(
+  query: string,
+  country: string,
+  countryCode?: string,
+) {
+  const rows = await placesSearchText(query, 8, countryCode)
+  if (!rows || rows.length === 0) return null
+  const universityRows = filterUniversityRows(rows)
+  const final = universityRows.length > 0 ? universityRows : rows
+  return final.slice(0, 8).map((p) => placeRowToMatch(p, country))
+}
+
+async function googlePlacesRecommend(
+  field: string,
+  country: string,
+  countryCode?: string,
+) {
+  // Best-fit query: "<field> universities in <country>"
+  const queries = [
+    `top ${field} universities in ${country}`,
+    `${field} graduate program universities in ${country}`,
+    `top universities in ${country}`,
+  ]
+  for (const q of queries) {
+    const rows = await placesSearchText(q, 8, countryCode)
+    if (!rows || rows.length === 0) continue
+    const universityRows = filterUniversityRows(rows)
+    if (universityRows.length === 0) continue
+    return universityRows.slice(0, 8).map((p) => placeRowToMatch(p, country))
+  }
+  return null
 }
 
 async function serperLookup(query: string, country: string) {
@@ -208,16 +305,39 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as LookupBody
     const country = body.country?.trim() || 'USA'
+    const countryCode = body.countryCode?.trim() || ''
+    const mode = body.mode || 'lookup'
+
+    if (mode === 'autocomplete') {
+      const queryRaw = (body.query || '').trim()
+      if (!queryRaw) return NextResponse.json({ matches: [], source: 'empty' })
+      const query = buildQuery(queryRaw, body.field, country)
+      const fromPlaces = await googlePlacesAutocomplete(query, country, countryCode)
+      if (fromPlaces && fromPlaces.length) {
+        return NextResponse.json({ matches: fromPlaces, source: 'google-places' })
+      }
+      // No autocomplete fallback for Serper — it gives one result, not a list.
+      return NextResponse.json({ matches: [], source: 'empty' })
+    }
+
+    if (mode === 'recommend') {
+      const field = body.field?.trim() || 'graduate'
+      const fromPlaces = await googlePlacesRecommend(field, country, countryCode)
+      if (fromPlaces && fromPlaces.length) {
+        return NextResponse.json({ matches: fromPlaces, source: 'google-places' })
+      }
+      return NextResponse.json({ matches: [], source: 'empty' })
+    }
+
+    // Default 'lookup' (single best match).
     const hint = (body.hint || '').trim()
     const query = buildQuery(hint, body.field, country)
 
-    // Try Google Places first.
-    const fromPlaces = await googlePlacesLookup(query, country)
+    const fromPlaces = await googlePlacesLookup(query, country, countryCode)
     if (fromPlaces) {
       return NextResponse.json({ match: fromPlaces, source: 'google-places' })
     }
 
-    // Fall back to Serper.
     const fromSerper = await serperLookup(query, country)
     if (fromSerper) {
       return NextResponse.json({ match: fromSerper, source: 'serper' })

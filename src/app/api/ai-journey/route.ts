@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
+import { generateContentWithFallback } from '@/lib/aiClient';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock' });
 
@@ -245,7 +246,7 @@ Profile: ${JSON.stringify(profileData)}`;
       if (process.env.GEMINI_API_KEY === 'mock' || !process.env.GEMINI_API_KEY) {
         throw new Error('No API key');
       }
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithFallback(ai, {
         model: 'gemini-2.5-flash',
         contents: prompt,
         config: {

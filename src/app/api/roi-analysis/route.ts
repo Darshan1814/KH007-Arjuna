@@ -14,6 +14,7 @@
 
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock' })
 
@@ -108,7 +109,7 @@ Rules
 - narrative: 2-3 sentences summarising the verdict and the single biggest swing factor.
 - All numbers integers in USD.`
 
-    const resp = await ai.models.generateContent({
+    const resp = await generateContentWithFallback(ai, {
       model: 'gemini-2.5-flash',
       contents: prompt,
       config: {

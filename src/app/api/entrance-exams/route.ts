@@ -11,6 +11,7 @@
 
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 import type { EntranceExamOption, EntranceExamStream } from '@/lib/types'
 import { NATIONAL_REGION } from '@/lib/indianRegions'
 
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
 Return ONLY genuine exams that exist as of 2025-2026. For each exam provide its short name, full official name, the conducting body/authority, and whether it is "National" or "State" level.
 Do not invent exams. If a state has no dedicated state-level ${stream} exam, return the national exams that state's students take.`
 
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithFallback(ai, {
       model: 'gemini-2.5-flash',
       contents: prompt,
       config: {

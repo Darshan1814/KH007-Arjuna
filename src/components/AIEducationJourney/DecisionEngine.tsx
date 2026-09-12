@@ -146,7 +146,7 @@ export default function DecisionEngine() {
             </div>
           )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {countryDecision?.recommendedCountries.map((c, i) => (
+            {(countryDecision?.recommendedCountries ?? []).map((c, i) => (
               <motion.div key={i} whileHover={{ scale: 1.02 }} onClick={() => setSelectedCountry(c.countryName)}
                 className="p-5 rounded-xl border cursor-pointer transition-all"
                 style={{
@@ -187,7 +187,7 @@ export default function DecisionEngine() {
     // ── PHASE 3: University ──
     PHASE_3_UNIVERSITY: () => (
       <div className="space-y-4">
-        {universityMatch?.bestMatchUniversities.map((u, i) => (
+        {(universityMatch?.bestMatchUniversities ?? []).map((u, i) => (
           <motion.div key={i} whileHover={{ scale: 1.01 }} onClick={() => setSelectedUniversity(u.name)}
             className="p-5 rounded-xl border cursor-pointer transition-all"
             style={{
@@ -381,11 +381,11 @@ export default function DecisionEngine() {
     // ── PHASE 9: Doc Acquisition ──
     PHASE_9_DOC_ACQUISITION: () => (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {documentAcquisition?.guides.map((g, i) => (
+        {(documentAcquisition?.guides ?? []).map((g, i) => (
           <div key={i} className="p-4 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
             <h4 className="font-semibold mb-3" style={{ color: 'var(--foreground)' }}>{g.documentName}</h4>
             <div className="space-y-2.5 pl-2">
-              {g.steps.map((s, idx) => (
+              {(g.steps ?? []).map((s, idx) => (
                 <div key={idx} className="flex items-start gap-2.5">
                   <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5" style={{ background: 'rgba(99,102,241,0.15)', color: 'var(--primary-light)' }}>{idx + 1}</span>
                   <p className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>{s}</p>

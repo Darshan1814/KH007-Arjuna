@@ -12,7 +12,7 @@
 // • Eight smart KPIs, an explained 3-scenario chart, EMI schedule + donut,
 //   alternatives table, scholarships from /api/scholarships (Serper).
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
 import { calculateEMI, parseNumber } from '@/lib/utils'
@@ -35,6 +35,7 @@ import {
   RefreshCw,
   MapPin,
   Info,
+  Building2,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -242,14 +243,115 @@ export default function ROICalculator({
   const [salaryGrowthPct, setSalaryGrowthPct] = useState<number>(7)
 
   // ── College lookup (Google Places) ────────────────────────────────────────
+  // Match record returned by /api/college-lookup
+  type CollegeMatch = {
+    name: string
+    formatted_address?: string
+    city?: string
+    place_id?: string
+    lat?: number | null
+    lng?: number | null
+  }
+  const [collegeSuggestions, setCollegeSuggestions] = useState<CollegeMatch[]>([])
+  const [collegeRecs, setCollegeRecs] = useState<CollegeMatch[]>([])
+  const [showCollegeDropdown, setShowCollegeDropdown] = useState(false)
+  const [collegeAcLoading, setCollegeAcLoading] = useState(false)
+  const collegeAbortRef = useRef<AbortController | null>(null)
+  const collegeDebounceRef = useRef<number | null>(null)
+
+  // Pick a specific suggestion or recommendation — closes the dropdown.
+  const pickCollege = (m: CollegeMatch) => {
+    setCollegeName(m.name)
+    setCollegeAddress(m.formatted_address || '')
+    setCollegeCity(m.city || '')
+    setCollegeSource('google-places')
+    setCollegeHintInput(m.name)
+    setShowCollegeDropdown(false)
+  }
+
+  // Fire a country-restricted autocomplete request as the user types.
+  const fetchCollegeSuggestions = (q: string) => {
+    if (collegeAbortRef.current) collegeAbortRef.current.abort()
+    if (!q || q.trim().length < 2) {
+      setCollegeSuggestions([])
+      setCollegeAcLoading(false)
+      return
+    }
+    const ac = new AbortController()
+    collegeAbortRef.current = ac
+    setCollegeAcLoading(true)
+    fetch('/api/college-lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: ac.signal,
+      body: JSON.stringify({
+        mode: 'autocomplete',
+        query: q.trim(),
+        country: toCountry.name,
+        countryCode: toCountry.code,
+        field: profileField,
+      }),
+    })
+      .then((r) => r.json())
+      .then((j) => {
+        if (ac.signal.aborted) return
+        const matches: CollegeMatch[] = Array.isArray(j?.matches) ? j.matches : []
+        setCollegeSuggestions(matches)
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setCollegeSuggestions([])
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setCollegeAcLoading(false)
+      })
+  }
+
+  // Country-aware recommendations to surface BEFORE the user types — these
+  // are the universities that best match the student's profile in the
+  // currently-selected destination country.
+  const fetchCollegeRecommendations = () => {
+    fetch('/api/college-lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'recommend',
+        country: toCountry.name,
+        countryCode: toCountry.code,
+        field: profileField,
+        degree: profileDegree,
+      }),
+    })
+      .then((r) => r.json())
+      .then((j) => {
+        const matches: CollegeMatch[] = Array.isArray(j?.matches) ? j.matches : []
+        setCollegeRecs(matches)
+      })
+      .catch(() => setCollegeRecs([]))
+  }
+
+  // Debounced typeahead — kicks off on every keystroke.
+  const onCollegeHintChange = (val: string) => {
+    setCollegeHintInput(val)
+    setShowCollegeDropdown(true)
+    if (collegeDebounceRef.current) {
+      window.clearTimeout(collegeDebounceRef.current)
+    }
+    collegeDebounceRef.current = window.setTimeout(() => {
+      fetchCollegeSuggestions(val)
+    }, 220)
+  }
+
+  // Single-shot lookup (kept for the manual "Update" button + initial load).
   const lookupCollege = (hint: string) => {
     setCollegeLoading(true)
     fetch('/api/college-lookup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        mode: 'lookup',
         hint,
         country: toCountry.name,
+        countryCode: toCountry.code,
         degree: profileDegree,
         field: profileField,
       }),
@@ -267,9 +369,10 @@ export default function ROICalculator({
       .finally(() => setCollegeLoading(false))
   }
 
-  // Auto-lookup whenever the destination country changes (and on first load).
+  // Auto-lookup + refresh recommendations whenever destination country changes.
   useEffect(() => {
     lookupCollege(collegeHintInput || profileTargetUni || profileField)
+    fetchCollegeRecommendations()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toCountry.code])
 
@@ -715,13 +818,29 @@ export default function ROICalculator({
             >
               College
             </label>
-            <div className="flex gap-2">
+            <div className="flex gap-2" style={{ position: 'relative' }}>
               <input
                 className="input-field flex-1"
-                placeholder='e.g. "MIT" or "University of Toronto"'
+                placeholder={`Search a college in ${toCountry.name}…`}
                 value={collegeHintInput}
-                onChange={(e) => setCollegeHintInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && lookupCollege(collegeHintInput)}
+                onChange={(e) => onCollegeHintChange(e.target.value)}
+                onFocus={() => setShowCollegeDropdown(true)}
+                onBlur={() => {
+                  // Delay so a click on a suggestion registers before the dropdown closes.
+                  setTimeout(() => setShowCollegeDropdown(false), 180)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    if (collegeSuggestions.length > 0) {
+                      pickCollege(collegeSuggestions[0])
+                    } else {
+                      lookupCollege(collegeHintInput)
+                    }
+                  } else if (e.key === 'Escape') {
+                    setShowCollegeDropdown(false)
+                  }
+                }}
               />
               <button
                 onClick={() => lookupCollege(collegeHintInput)}
@@ -735,6 +854,99 @@ export default function ROICalculator({
                 )}
                 Find
               </button>
+
+              {showCollegeDropdown &&
+                (collegeAcLoading ||
+                  collegeSuggestions.length > 0 ||
+                  collegeRecs.length > 0) && (
+                  <div
+                    className="absolute left-0 right-0 mt-1 max-h-72 overflow-auto rounded-lg shadow-lg z-50"
+                    style={{
+                      top: '100%',
+                      background: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                    }}
+                    onMouseDown={(e) => e.preventDefault()}
+                  >
+                    {collegeAcLoading && (
+                      <div
+                        className="px-3 py-2 text-xs flex items-center gap-2"
+                        style={{ color: 'var(--foreground-muted)' }}
+                      >
+                        <Loader2 className="w-3 h-3 animate-spin" /> Searching universities in {toCountry.name}…
+                      </div>
+                    )}
+                    {!collegeAcLoading && collegeSuggestions.length > 0 && (
+                      <div>
+                        <div
+                          className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold"
+                          style={{
+                            color: 'var(--foreground-muted)',
+                            background: 'var(--background-secondary)',
+                          }}
+                        >
+                          Matches in {toCountry.name}
+                        </div>
+                        {collegeSuggestions.map((m) => (
+                          <button
+                            key={`s-${m.place_id || m.name}`}
+                            type="button"
+                            onClick={() => pickCollege(m)}
+                            className="w-full text-left px-3 py-2 text-xs flex items-start gap-2 hover:bg-[var(--background-secondary)] transition-colors"
+                          >
+                            <Building2 className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: 'var(--primary)' }} />
+                            <span className="flex-1 min-w-0">
+                              <span className="block font-semibold truncate" style={{ color: 'var(--foreground)' }}>
+                                {m.name}
+                              </span>
+                              {m.formatted_address && (
+                                <span className="block truncate" style={{ color: 'var(--foreground-muted)' }}>
+                                  {m.formatted_address}
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {!collegeAcLoading &&
+                      collegeSuggestions.length === 0 &&
+                      collegeRecs.length > 0 && (
+                        <div>
+                          <div
+                            className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold flex items-center gap-1.5"
+                            style={{
+                              color: 'var(--foreground-muted)',
+                              background: 'var(--background-secondary)',
+                            }}
+                          >
+                            <Sparkles className="w-3 h-3" style={{ color: 'var(--accent)' }} />
+                            Recommended for your {profileField} profile in {toCountry.name}
+                          </div>
+                          {collegeRecs.map((m) => (
+                            <button
+                              key={`r-${m.place_id || m.name}`}
+                              type="button"
+                              onClick={() => pickCollege(m)}
+                              className="w-full text-left px-3 py-2 text-xs flex items-start gap-2 hover:bg-[var(--background-secondary)] transition-colors"
+                            >
+                              <Building2 className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: 'var(--accent)' }} />
+                              <span className="flex-1 min-w-0">
+                                <span className="block font-semibold truncate" style={{ color: 'var(--foreground)' }}>
+                                  {m.name}
+                                </span>
+                                {m.formatted_address && (
+                                  <span className="block truncate" style={{ color: 'var(--foreground-muted)' }}>
+                                    {m.formatted_address}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                  </div>
+                )}
             </div>
             {collegeName && (
               <div

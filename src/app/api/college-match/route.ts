@@ -21,6 +21,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { parse as parseCsv } from 'csv-parse/sync'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock' })
 
@@ -265,7 +266,7 @@ function bucketRow(
 async function aiQueryToFilters(q: string): Promise<Partial<FilterRequest>> {
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'mock') return {}
   try {
-    const resp = await ai.models.generateContent({
+    const resp = await generateContentWithFallback(ai, {
       model: 'gemini-2.5-flash',
       contents: `Convert this free-text college search into structured database filters. Return ONLY the fields explicitly stated or strongly implied — leave others as empty arrays.
 

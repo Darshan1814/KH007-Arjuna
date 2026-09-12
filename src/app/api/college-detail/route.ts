@@ -19,6 +19,7 @@
 
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 import type {
   DomesticCollegeDetailData,
   EntranceExamStream,
@@ -214,7 +215,7 @@ async function buildReviewQueries(input: DetailInput): Promise<string[]> {
   }
 
   try {
-    const resp = await ai.models.generateContent({
+    const resp = await generateContentWithFallback(ai, {
       model: 'gemini-2.5-flash',
       contents: `You plan Google searches to find REAL student and alumni REVIEWS of an Indian college, prioritising Glassdoor.
 
@@ -414,7 +415,7 @@ RULES: Use genuine figures grounded in the search results above wherever possibl
 
     let response
     try {
-      response = await ai.models.generateContent({
+      response = await generateContentWithFallback(ai, {
         model: 'gemini-2.5-flash',
         contents: prompt,
         config: {

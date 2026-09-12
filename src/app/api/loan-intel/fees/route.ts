@@ -4,6 +4,7 @@
 
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock' })
 
@@ -51,7 +52,7 @@ Results:
 ${sourceList}
 
 Return JSON with: feeLocal (e.g. "USD 52,000/yr"), feeINR (integer per year, INR — use 1 USD=83, 1 GBP=105, 1 CAD=61, 1 AUD=55, 1 EUR=90), currency (3-letter), sourceName (publisher), sourceUrl. If you cannot extract, return feeINR=0.`
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithFallback(ai, {
         model: 'gemini-2.0-flash',
         contents: prompt,
         config: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0.1 },

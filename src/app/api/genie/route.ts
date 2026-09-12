@@ -15,6 +15,7 @@
 
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock' })
 
@@ -307,7 +308,7 @@ export async function POST(request: Request) {
     conversationParts.push({ role: 'user', parts: [{ text: message }] })
 
     // First pass — Gemini may emit a searchQuery for fresh web data.
-    const first = await ai.models.generateContent({
+    const first = await generateContentWithFallback(ai, {
       model: 'gemini-2.5-flash',
       contents: conversationParts,
       config: {
@@ -330,7 +331,7 @@ export async function POST(request: Request) {
           web
             .map((h, i) => `${i + 1}. ${h.title}\n   ${h.link}\n   ${h.snippet}`)
             .join('\n')
-        const second = await ai.models.generateContent({
+        const second = await generateContentWithFallback(ai, {
           model: 'gemini-2.5-flash',
           contents: conversationParts,
           config: {

@@ -21,6 +21,7 @@
 
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 import type { DomesticLoanResult } from '@/lib/types'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock' })
@@ -165,7 +166,7 @@ async function buildLoanQueries(college: CollegeInput, profile: ProfileInput): P
 
   try {
     const where = [college.city, college.state].filter(Boolean).join(', ')
-    const resp = await ai.models.generateContent({
+    const resp = await generateContentWithFallback(ai, {
       model: 'gemini-2.0-flash',
       contents: `You plan Google searches for an Indian DOMESTIC education-loan advisor. Generate 6–8 high-precision queries to find REAL education-loan products an Indian student${collegeName ? ` joining "${collegeName}"` : ''} can apply to in ${year}, landing on official lender apply pages.
 
@@ -272,7 +273,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ options: [], sources: [], source: 'no-gemini' })
     }
 
-    const synthesis = await ai.models.generateContent({
+    const synthesis = await generateContentWithFallback(ai, {
       model: 'gemini-2.5-flash',
       contents: `You are an Indian DOMESTIC education-loan advisor. From the LIVE search results below, pick the **6 most relevant, currently-active education-loan products** for an Indian student${college.name ? ` joining "${college.name}"${where ? ` (${where})` : ''}${college.collegeType ? `, a ${college.collegeType}` : ''}` : ''}${college.branch ? `, studying ${college.branch}` : ''} IN INDIA. Return up to 6 options, each from a DIFFERENT lender.
 

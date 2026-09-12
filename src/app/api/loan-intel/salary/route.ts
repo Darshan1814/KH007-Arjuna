@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock' })
 
@@ -52,7 +53,7 @@ Return strict JSON: { "min": number, "avg": number, "top": number, "currency": s
 - currency: ISO 4217 3-letter code of the LOCAL currency of ${country} (e.g. CAD for Canada, INR for India, KRW for South Korea, AED for UAE).
 - Do NOT default to USD unless ${country} actually uses USD. Use the actual local currency.
 - All numbers must be specifically for ${country} — do not return numbers for any other country.`
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithFallback(ai, {
         model: 'gemini-2.5-flash',
         contents: prompt,
         config: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0.2 },

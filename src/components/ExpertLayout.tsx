@@ -6,6 +6,7 @@ import {
   Home, Users, MessageSquare, ShieldCheck, LogOut, Menu, X, Sparkles, UserPlus
 } from 'lucide-react'
 import { Toaster, toast } from 'react-hot-toast'
+import LanguageSelector from './LanguageSelector'
 import ExpertHome from './pages/expert/ExpertHome'
 import ExpertStudents from './pages/expert/ExpertStudents'
 import ExpertChat from './pages/expert/ExpertChat'
@@ -120,6 +121,9 @@ export default function ExpertLayout() {
             <button onClick={toggleSidebar} className="p-2 rounded-lg hover:bg-white/5 transition-colors">
               {sidebarOpen ? <X className="w-5 h-5" style={{ color: 'var(--foreground)' }} /> : <Menu className="w-5 h-5" style={{ color: 'var(--foreground)' }} />}
             </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <LanguageSelector />
           </div>
         </header>
 

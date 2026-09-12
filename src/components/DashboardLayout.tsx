@@ -33,6 +33,7 @@ import DocumentVault from './pages/DocumentVault'
 import GrowthTools from './pages/GrowthTools'
 import NudgeEngine from './NudgeEngine'
 import Genie from './Genie'
+import LanguageSelector from './LanguageSelector'
 import ProfileWarningBanner from './ProfileWarningBanner'
 import GamificationPage from './pages/GamificationPage'
 import TimelinePage from './pages/TimelinePage'
@@ -308,6 +309,7 @@ export default function DashboardLayout() {
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
+            <LanguageSelector />
             <button onClick={() => setCurrentPage('profile')} title={profile.name ? `${profile.name} — Profile` : 'Profile'}
               className="h-10 rounded-xl flex items-center gap-2 pl-1.5 pr-3 transition-all"
               style={{

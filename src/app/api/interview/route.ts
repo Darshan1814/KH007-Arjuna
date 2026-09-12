@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 
 // Single Gemini-backed endpoint that powers the Interview Prep page:
 //   action='questions' → 10 tailored interview questions
@@ -133,7 +134,7 @@ Return JSON only: { questions: [{ q, why, tip }] }
 - No emojis, no Markdown, plain text.`
 
   try {
-    const resp = await ai.models.generateContent({
+    const resp = await generateContentWithFallback(ai, {
       model: MODEL,
       contents: prompt,
       config: {
@@ -192,7 +193,7 @@ Transcript (JSON): ${JSON.stringify(qa)}
 Return JSON only matching the schema. No Markdown, no emojis.`
 
   try {
-    const resp = await ai.models.generateContent({
+    const resp = await generateContentWithFallback(ai, {
       model: MODEL,
       contents: prompt,
       config: {

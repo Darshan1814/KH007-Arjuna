@@ -17,6 +17,7 @@
 
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 import type {
   DomesticCollegeResult,
   EntranceExamStream,
@@ -347,7 +348,7 @@ Order the array by qualityScore DESCENDING (best college first). Only return gen
 
     let response
     try {
-      response = await ai.models.generateContent({
+      response = await generateContentWithFallback(ai, {
         model: 'gemini-2.5-flash',
         contents: prompt,
         config: {

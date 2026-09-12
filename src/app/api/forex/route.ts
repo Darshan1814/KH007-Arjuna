@@ -9,6 +9,7 @@
 
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock' })
 
@@ -116,7 +117,7 @@ async function fetchPublicRate(from: string, to: string): Promise<number | null>
 async function fetchGeminiRate(from: string, to: string): Promise<number | null> {
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'mock') return null
   try {
-    const resp = await ai.models.generateContent({
+    const resp = await generateContentWithFallback(ai, {
       model: 'gemini-2.5-flash',
       contents: `Provide the current spot foreign-exchange rate for converting 1 ${from.toUpperCase()} to ${to.toUpperCase()}. Use a recent mid-market estimate. Reply ONLY with strict JSON: {"rate": <number>}. No commentary.`,
       config: {

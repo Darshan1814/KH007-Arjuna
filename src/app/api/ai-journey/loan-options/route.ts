@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock' })
 
@@ -102,7 +103,7 @@ Return JSON only.`
 
     try {
       if (process.env.GEMINI_API_KEY === 'mock' || !process.env.GEMINI_API_KEY) throw new Error('No key')
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithFallback(ai, {
         model: 'gemini-2.5-flash',
         contents: prompt,
         config: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0.2 },

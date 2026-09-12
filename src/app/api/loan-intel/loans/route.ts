@@ -19,6 +19,7 @@
 
 import { NextResponse } from 'next/server'
 import { GoogleGenAI, Type } from '@google/genai'
+import { generateContentWithFallback } from '@/lib/aiClient'
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock' })
 
@@ -182,7 +183,7 @@ export async function POST(request: Request) {
     let queries: string[] = []
     if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'mock') {
       try {
-        const queryResp = await ai.models.generateContent({
+        const queryResp = await generateContentWithFallback(ai, {
           model: 'gemini-2.0-flash',
           contents: `You plan Google searches for an Indian education-loan advisor. Given a student's profile, generate 6–8 high-precision Google search queries that will find REAL, STUDENT EDUCATION LOAN PRODUCTS that an Indian student can apply to in 2026. Goal is to land on official lender apply pages.
 
@@ -295,7 +296,7 @@ Return strict JSON: { "queries": string[] } with 6–8 queries.`,
     let synthesisError: string | null = null
     if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'mock') {
       try {
-        const synthesis = await ai.models.generateContent({
+        const synthesis = await generateContentWithFallback(ai, {
           model: 'gemini-2.0-flash',
           contents: `You are an Indian education-loan advisor. From the LIVE search results below, pick the **6 most relevant, currently-active STUDENT EDUCATION LOAN PRODUCTS** for THIS profile. Return EXACTLY 6 options, each from a DIFFERENT lender (different domain).
 
